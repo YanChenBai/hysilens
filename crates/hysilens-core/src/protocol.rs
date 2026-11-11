@@ -169,6 +169,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keeps_cache_matching_inputs_out_of_snapshot_and_updates() {
+        let mut snapshot = crate::coordinator::Coordinator::new(
+            "test".into(),
+            crate::platforms::test_descriptors(),
+        )
+        .state;
+        let session = Session {
+            source_id: "test-player".into(),
+            track_id: Some("opaque-track".into()),
+            lyric_match: Some(crate::model::LyricMatch {
+                file_hashes: vec!["private-hash".into()],
+                preferred_lyric_id: Some("private-lyric".into()),
+            }),
+            ..Default::default()
+        };
+        let expected = serde_json::to_value(Session {
+            lyric_match: None,
+            ..session.clone()
+        })
+        .unwrap();
+        snapshot.session = Some(session.clone());
+        snapshot.playback.sessions.push(session);
+        for value in [
+            serde_json::to_value(&snapshot).unwrap(),
+            serde_json::to_value(SnapshotUpdate::new(&snapshot, false)).unwrap(),
+        ] {
+            assert_eq!(value["session"], expected);
+            assert_eq!(value["playback"]["sessions"][0], expected);
+            assert_eq!(value["session"]["trackId"], "opaque-track");
+            let json = value.to_string();
+            assert!(!json.contains("private-hash"));
+            assert!(!json.contains("private-lyric"));
+        }
+    }
+
+    #[test]
     fn keeps_v1_snapshot_shape_and_distinguishes_omission_from_clear() {
         let mut snapshot = crate::coordinator::Coordinator::new(
             "test".into(),

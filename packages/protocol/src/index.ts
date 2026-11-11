@@ -24,6 +24,8 @@ export type Session = {
   rate: number | null;
   rateBasis: string;
   error: string | null;
+  /** Opaque source track identity; compare for equality without parsing. */
+  trackId?: string;
 };
 
 export type { LyricLine, LyricDocument } from '@hysilens/plugin';

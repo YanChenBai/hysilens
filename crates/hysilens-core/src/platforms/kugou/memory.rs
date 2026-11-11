@@ -1,4 +1,5 @@
 // 播放地址与指针链改编自 AF Media Bar；MIT 版权声明见 THIRD_PARTY_NOTICES.md。
+use super::identity;
 use anyhow::{Context, ensure};
 use std::mem::size_of;
 use windows::Win32::{
@@ -130,6 +131,7 @@ pub struct Reader {
     duration_base: usize,
     layouts: &'static [Layout],
     layout: Layout,
+    identity_entry: Result<identity::Entry, String>,
 }
 
 impl Reader {
@@ -204,8 +206,11 @@ impl Reader {
                         Some((entry.modBaseAddr as usize, file_version(&entry.szExePath)?))
                 }
                 "kugou.dll" => {
-                    duration_base =
-                        Some((entry.modBaseAddr as usize, file_version(&entry.szExePath)?))
+                    duration_base = Some((
+                        entry.modBaseAddr as usize,
+                        file_version(&entry.szExePath)?,
+                        entry.modBaseSize as usize,
+                    ))
                 }
                 _ => {}
             }
@@ -214,9 +219,10 @@ impl Reader {
             }
         }
         let (position_base, position_version) = position_base.context("缺少 kgplayer.dll")?;
-        let (duration_base, duration_version) = duration_base.context("缺少 kugou.dll")?;
+        let (duration_base, duration_version, duration_size) =
+            duration_base.context("缺少 kugou.dll")?;
         let layouts = layouts(position_version, duration_version)?;
-        Ok(Self {
+        let mut reader = Self {
             handle: Handle(unsafe {
                 // 模块已由 Toolhelp 枚举；读取内存不需要额外申请查询权限。
                 OpenProcess(PROCESS_VM_READ, false, pid).context("无法打开酷狗进程进行只读访问")?
@@ -225,26 +231,59 @@ impl Reader {
             duration_base,
             layouts,
             layout: layouts[0],
-        })
+            identity_entry: Err("酷狗身份入口尚未定位".into()),
+        };
+        reader.prepare_identity(duration_version, duration_size);
+        Ok(reader)
+    }
+
+    fn prepare_identity(&mut self, version: [u16; 4], size: usize) {
+        // Identity failure must not disable progress/duration or older supported builds.
+        self.identity_entry = if version == [20, 1, 61, 28014] {
+            identity::Entry::discover(self, self.duration_base, size)
+                .map_err(|error| format!("{error:#}"))
+        } else {
+            Err(format!("酷狗内存歌曲身份尚未适配 ({version:?})"))
+        };
+    }
+
+    pub fn identity(&self) -> anyhow::Result<super::KugouIdentity> {
+        let entry = self
+            .identity_entry
+            .as_ref()
+            .map_err(|message| anyhow::anyhow!("{message}"))?;
+        entry.read(self)
     }
 
     fn read<const N: usize>(&self, address: usize) -> anyhow::Result<[u8; N]> {
-        ensure!(address >= 0x10000, "酷狗内存地址无效");
         let mut bytes = [0; N];
+        self.read_into(address, &mut bytes)?;
+        Ok(bytes)
+    }
+
+    pub(super) fn read_into(&self, address: usize, bytes: &mut [u8]) -> anyhow::Result<()> {
+        let length = bytes.len();
+        ensure!(
+            address >= 0x10000
+                && address
+                    .checked_add(length)
+                    .is_some_and(|end| (end as u64) <= 0x0000_8000_0000_0000),
+            "酷狗内存地址无效"
+        );
         let mut read = 0;
-        // SAFETY: bytes 是 N 字节的有效输出缓冲区，目标进程地址由系统校验。
+        // SAFETY: bytes 是 length 字节的有效输出缓冲区，目标进程地址由系统校验。
         unsafe {
             ReadProcessMemory(
                 self.handle.0,
                 address as _,
                 bytes.as_mut_ptr() as _,
-                N,
+                length,
                 Some(&mut read),
             )
-            .with_context(|| format!("读取酷狗内存失败 (地址 {address:#x}，{N} 字节)"))?;
+            .with_context(|| format!("读取酷狗内存失败 (地址 {address:#x}，{length} 字节)"))?;
         }
-        ensure!(read == N, "酷狗内存读取不完整");
-        Ok(bytes)
+        ensure!(read == length, "酷狗内存读取不完整");
+        Ok(())
     }
 
     fn position(&self) -> anyhow::Result<f64> {
@@ -389,6 +428,7 @@ mod tests {
             }
             let root = Box::new(buffers.last().unwrap().as_ptr() as u64);
             let reader = Reader {
+                identity_entry: Err("test".into()),
                 // SAFETY: 只读打开当前测试进程，所有目标缓冲区存活到读取结束。
                 handle: Handle(unsafe {
                     OpenProcess(PROCESS_VM_READ, false, std::process::id()).unwrap()
@@ -429,6 +469,7 @@ mod tests {
             }
             let root = Box::new(shared.as_ptr() as u64);
             let mut reader = Reader {
+                identity_entry: Err("test".into()),
                 // SAFETY: all target allocations belong to this test and outlive the reads.
                 handle: Handle(unsafe {
                     OpenProcess(PROCESS_VM_READ, false, std::process::id()).unwrap()
@@ -466,6 +507,7 @@ mod tests {
         let mut position = Box::new(123.548812f64);
         let root = Box::new(0u64);
         let mut reader = Reader {
+            identity_entry: Err("test".into()),
             // SAFETY: position/root allocations remain live for all read-only probes.
             handle: Handle(unsafe {
                 OpenProcess(PROCESS_VM_READ, false, std::process::id()).unwrap()

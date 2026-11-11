@@ -27,6 +27,17 @@ pub struct Session {
     pub rate: Option<f64>,
     pub rate_basis: String,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub track_id: Option<String>,
+    // Internal cache matching inputs never become part of the wire protocol.
+    #[serde(skip)]
+    pub(crate) lyric_match: Option<LyricMatch>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LyricMatch {
+    pub file_hashes: Vec<String>,
+    pub preferred_lyric_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

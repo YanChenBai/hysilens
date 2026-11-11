@@ -194,6 +194,7 @@ fn read_session(
         }
         .into(),
         error: None,
+        ..Session::default()
     })
 }
 

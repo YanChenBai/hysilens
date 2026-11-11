@@ -52,6 +52,12 @@ impl Coordinator {
             .as_ref()
             .and_then(|session| session.duration_ms)
             != session.as_ref().and_then(|session| session.duration_ms);
+        let lyric_identity_changed = self
+            .state
+            .session
+            .as_ref()
+            .and_then(|s| s.lyric_match.as_ref())
+            != session.as_ref().and_then(|s| s.lyric_match.as_ref());
 
         self.state.playback = playback;
 
@@ -63,7 +69,7 @@ impl Coordinator {
             self.manual_key = None;
 
             self.resolve();
-        } else if duration_changed && self.manual_key.is_none() {
+        } else if (duration_changed || lyric_identity_changed) && self.manual_key.is_none() {
             // 歌曲信息与时间轴可能分批到达，不等待目录变化才重新消歧。
             self.resolve();
         }
@@ -226,7 +232,7 @@ fn choose_session<'a>(
         .find_map(|platform| {
             playback.sessions.iter().find(|session| {
                 session.source_id.eq_ignore_ascii_case(platform.session_id)
-                    && !session.title.is_empty()
+                    && (!session.title.is_empty() || session.track_id.is_some())
                     && (source != Source::Auto
                         || !matches!(session.status.as_str(), "opened" | "closed" | "stopped"))
             })
@@ -235,6 +241,10 @@ fn choose_session<'a>(
 
 fn identity(session: Option<&Session>) -> Option<(&str, &str, &str, &str)> {
     session.map(|session| {
+        // Native identity detects same-title versions and ignores delayed SMTC text updates.
+        if let Some(track_id) = session.track_id.as_deref() {
+            return (session.source_id.as_str(), track_id, "", "");
+        }
         (
             session.source_id.as_str(),
             session.title.as_str(),
@@ -248,6 +258,71 @@ fn identity(session: Option<&Session>) -> Option<(&str, &str, &str, &str)> {
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn native_identity_resets_same_title_selection_and_refreshes_lyric_recommendations() {
+        use crate::model::{Entry, LyricMatch};
+        let mut coordinator =
+            Coordinator::new("test".into(), vec![crate::platforms::kugou::DESCRIPTOR]);
+        let entries = [1, 2]
+            .into_iter()
+            .map(|id| Entry {
+                key: id.to_string(),
+                filename: format!("Singer - Same-{}-{id}-00000000.krc", "aa".repeat(16)),
+                title: "Same".into(),
+                artist: "Singer".into(),
+                album: String::new(),
+                line_count: 0,
+                document: Arc::new(Document {
+                    id: id.to_string(),
+                    filename: String::new(),
+                    metadata: Default::default(),
+                    tracks: vec![],
+                    warnings: vec![],
+                }),
+            })
+            .collect();
+        coordinator.catalog(
+            Source::Kugou,
+            Catalog {
+                entries,
+                issues: vec![],
+            },
+        );
+        let sample = |queue_item_id: i32, recommend_krc_id: u32, artist: &str| Playback {
+            sessions: vec![Session {
+                source_id: "kugou".into(),
+                title: "Same".into(),
+                artist: artist.into(),
+                status: "playing".into(),
+                track_id: Some(format!("track:{queue_item_id}")),
+                lyric_match: Some(LyricMatch {
+                    file_hashes: vec!["aa".repeat(16)],
+                    preferred_lyric_id: Some(recommend_krc_id.to_string()),
+                }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        coordinator.playback(sample(42, 1, "Singer"));
+        let generation = coordinator.state.generation;
+        assert_eq!(coordinator.state.document.as_ref().unwrap().id, "1");
+        coordinator.playback(sample(42, 2, "Singer"));
+        assert_eq!(coordinator.state.document.as_ref().unwrap().id, "2");
+        assert_eq!(coordinator.state.generation, generation);
+        coordinator.select(generation, Some("1".into())).unwrap();
+        coordinator.playback(sample(42, 2, "Singer、Collaborator"));
+        assert_eq!(coordinator.state.lyrics_status, "manual");
+        assert_eq!(coordinator.state.generation, generation);
+        coordinator.playback(sample(43, 2, "Singer、Collaborator"));
+        assert_eq!(coordinator.state.generation, generation + 1);
+        assert_eq!(coordinator.state.lyrics_status, "matchedMemoryHash");
+        assert_eq!(coordinator.state.document.as_ref().unwrap().id, "2");
+        assert!(coordinator.select(generation, Some("1".into())).is_err());
+        coordinator.playback(sample(42, 1, "Singer"));
+        assert_eq!(coordinator.state.generation, generation + 2);
+        assert_eq!(coordinator.state.document.as_ref().unwrap().id, "1");
+    }
 
     fn sample(coordinator: &mut Coordinator, playback: Playback, document: Option<Arc<Document>>) {
         coordinator.sample(

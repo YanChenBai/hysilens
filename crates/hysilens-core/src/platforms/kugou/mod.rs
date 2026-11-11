@@ -1,4 +1,6 @@
 pub mod catalog;
+#[cfg(windows)]
+mod identity;
 pub mod lyrics;
 #[cfg(windows)]
 mod memory;
@@ -12,6 +14,48 @@ use std::{
     path::PathBuf,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
+
+/// Read-only identity from the current KuGou queue entry, independent of SMTC text.
+#[cfg(windows)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct KugouIdentity {
+    pub queue_item_id: i32,
+    pub source_type: i32,
+    pub list_id: i32,
+    pub source_song_id: i32,
+    pub music_file_hash: String,
+    pub last_played_music_hash: String,
+    pub mix_song_id: u64,
+    pub recommend_krc_id: u32,
+}
+
+#[cfg(windows)]
+impl KugouIdentity {
+    pub(super) fn track_id(&self) -> String {
+        format!(
+            "kugou:{}:{}:{}:{}:{}:{}:{}",
+            self.queue_item_id,
+            self.source_type,
+            self.list_id,
+            self.source_song_id,
+            self.mix_song_id,
+            self.music_file_hash,
+            self.last_played_music_hash
+        )
+    }
+
+    pub(super) fn lyric_match(&self) -> crate::model::LyricMatch {
+        crate::model::LyricMatch {
+            file_hashes: vec![
+                self.music_file_hash.clone(),
+                self.last_played_music_hash.clone(),
+            ],
+            preferred_lyric_id: (self.recommend_krc_id != 0)
+                .then(|| self.recommend_krc_id.to_string()),
+        }
+    }
+}
 
 pub const DESCRIPTOR: Descriptor = Descriptor {
     source: Source::Kugou,
@@ -36,7 +80,7 @@ pub struct Probe {
     media: anyhow::Result<super::qq_music::Probe>,
     #[cfg(windows)]
     memory: Option<memory::Reader>,
-    previous: Option<(String, String, f64, Instant)>,
+    previous: Option<(String, String, Option<String>, f64, Instant)>,
     last_attach: Option<Instant>,
     #[cfg(windows)]
     attach_error: Option<String>,
@@ -111,22 +155,35 @@ impl Probe {
         #[cfg(not(windows))]
         let timeline: anyhow::Result<(f64, Option<f64>)> =
             Err(anyhow::anyhow!("酷狗内存读取仅支持 Windows"));
+        #[cfg(windows)]
+        if let Some(reader) = &self.memory
+            && let Ok(identity) = reader.identity()
+        {
+            // 身份失败由专用诊断报告记录，继续使用现有缓存匹配。
+            session.track_id = Some(identity.track_id());
+            session.lyric_match = Some(identity.lyric_match());
+        }
         match timeline {
             Ok((position, duration)) => {
                 let now = Instant::now();
-                let normal =
-                    self.previous
-                        .as_ref()
-                        .is_some_and(|(title, artist, old_position, sampled)| {
-                            let elapsed = now.duration_since(*sampled).as_secs_f64() * 1000.0;
-                            title == &session.title
-                                && artist == &session.artist
-                                && elapsed >= 50.0
-                                && (0.8..=1.2).contains(&((position - old_position) / elapsed))
-                        });
+                let normal = self.previous.as_ref().is_some_and(
+                    |(title, artist, track_id, old_position, sampled)| {
+                        let elapsed = now.duration_since(*sampled).as_secs_f64() * 1000.0;
+                        title == &session.title
+                            && artist == &session.artist
+                            && track_id == &session.track_id
+                            && elapsed >= 50.0
+                            && (0.8..=1.2).contains(&((position - old_position) / elapsed))
+                    },
+                );
                 apply_timeline(session, position, duration, normal);
-                self.previous =
-                    Some((session.title.clone(), session.artist.clone(), position, now));
+                self.previous = Some((
+                    session.title.clone(),
+                    session.artist.clone(),
+                    session.track_id.clone(),
+                    position,
+                    now,
+                ));
             }
             Err(error) => {
                 #[cfg(windows)]

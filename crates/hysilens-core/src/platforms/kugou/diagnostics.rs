@@ -1,4 +1,5 @@
-//! On-demand, read-only diagnostics. No memory scan or full process dump is taken.
+//! On-demand, read-only diagnostics. Identity AOB scans executable module sections only.
+//! No full process dump is taken.
 use super::*;
 use crate::platforms::qq_music;
 use serde_json::{Value, json};
@@ -422,11 +423,17 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
     match prepare() {
         Ok((position, duration, layouts)) => {
             let mut reader = Reader {
+                identity_entry: Err("not initialized".into()),
                 handle,
                 position_base: position.base,
                 duration_base: duration.base,
                 layouts,
                 layout: layouts[0],
+            };
+            reader.prepare_identity(duration.version.unwrap_or_default(), duration.size as usize);
+            report["identityEntry"] = match &reader.identity_entry {
+                Ok(entry) => json!({"value":entry}),
+                Err(error) => json!({"error":error}),
             };
             let mut captures = Vec::new();
             let origin = Instant::now();
@@ -460,6 +467,7 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
                     "finishedUnixMs": timestamp(),
                     "elapsedMs": origin.elapsed().as_millis(),
                     "preferredUsableLayoutIndex": selected,
+                    "identity": result_value(reader.identity()),
                     "mediaBefore": media_before,
                     "mediaAfter": media_snapshot(media),
                     "layouts": attempts,
@@ -551,6 +559,7 @@ mod tests {
 
     fn reader(position: &f64, root: &u64, chain: &'static [usize]) -> Reader {
         Reader {
+            identity_entry: Err("test".into()),
             // SAFETY: tests only read their own live buffers using a read/query-only handle.
             handle: Handle(unsafe {
                 OpenProcess(

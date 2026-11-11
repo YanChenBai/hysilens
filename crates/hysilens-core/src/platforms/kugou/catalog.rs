@@ -42,6 +42,13 @@ pub fn resolve(
     session: &Session,
     key: Option<&str>,
 ) -> super::super::CatalogResolution {
+    if let Some(identity) = session
+        .lyric_match
+        .as_ref()
+        .filter(|identity| identity.file_hashes.iter().any(|hash| valid_hash(hash)))
+    {
+        return resolve_memory(catalog, identity, key);
+    }
     let candidates: Vec<_> = catalog
         .entries
         .iter()
@@ -102,6 +109,75 @@ pub fn resolve(
     };
     super::super::CatalogResolution {
         document: selected.map(|entry| entry.document.clone()),
+        candidates,
+        status,
+    }
+}
+
+fn valid_hash(hash: &str) -> bool {
+    hash.len() == 32
+        && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        && hash.bytes().any(|byte| byte != b'0')
+}
+
+fn resolve_memory(
+    catalog: &Catalog,
+    identity: &crate::model::LyricMatch,
+    key: Option<&str>,
+) -> super::super::CatalogResolution {
+    // Identity is stronger than SMTC text. A missing hash match must not fall through
+    // to a same-title cache belonging to a different recording/version.
+    let candidates: Vec<_> = catalog
+        .entries
+        .iter()
+        .filter(|entry| {
+            cache_fields(&entry.filename).is_some_and(|(_, hash, _)| {
+                valid_hash(hash)
+                    && identity
+                        .file_hashes
+                        .iter()
+                        .any(|current| hash.eq_ignore_ascii_case(current))
+            })
+        })
+        .cloned()
+        .collect();
+    let manual = key.and_then(|key| catalog.entries.iter().find(|entry| entry.key == key));
+    // Recommended IDs have collided across unrelated songs in real reports. Apply
+    // this preference only AFTER constraining candidates by the current audio hash.
+    let recommended: Vec<_> = candidates
+        .iter()
+        .filter(|entry| {
+            identity
+                .preferred_lyric_id
+                .as_ref()
+                .is_some_and(|preferred| {
+                    cache_fields(&entry.filename)
+                        .is_some_and(|(_, _, id)| id.to_string() == *preferred)
+                })
+        })
+        .collect();
+    let preferred = if recommended.is_empty() {
+        candidates.iter().collect::<Vec<_>>()
+    } else {
+        recommended
+    };
+    let automatic = preferred.first().copied().filter(|first| {
+        preferred
+            .iter()
+            .all(|entry| entry.document.id == first.document.id)
+    });
+    let document = manual.or(automatic).map(|entry| entry.document.clone());
+    let status = if manual.is_some() {
+        "manual"
+    } else if automatic.is_some() {
+        "matchedMemoryHash"
+    } else if candidates.is_empty() {
+        "missing"
+    } else {
+        "ambiguous"
+    };
+    super::super::CatalogResolution {
+        document,
         candidates,
         status,
     }
@@ -193,6 +269,10 @@ fn matches_artists(cached: &str, media: &str) -> bool {
 }
 
 fn filename_identity(filename: &str) -> Option<(&str, &str)> {
+    cache_fields(filename)?.0.split_once(" - ")
+}
+
+fn cache_fields(filename: &str) -> Option<(&str, &str, u64)> {
     let stem = filename.strip_suffix(".krc")?;
     let (stem, flags) = stem.rsplit_once('-')?;
     let (stem, id) = stem.rsplit_once('-')?;
@@ -206,7 +286,7 @@ fn filename_identity(filename: &str) -> Option<(&str, &str)> {
     {
         return None;
     }
-    stem.split_once(" - ")
+    Some((stem, hash, id.parse().ok()?))
 }
 
 fn normalized(value: &str) -> String {
@@ -380,5 +460,96 @@ mod tests {
         };
         assert_eq!(resolve(&catalog, &session, None).status, "ambiguous");
         assert_eq!(resolve(&catalog, &session, Some("key")).status, "manual");
+    }
+
+    fn identified_session() -> Session {
+        Session {
+            title: "Different / SMTC alias".into(),
+            artist: "Missing collaborator".into(),
+            lyric_match: Some(crate::model::LyricMatch {
+                file_hashes: vec!["12".repeat(16), "1e1898733bb33fbee0cd6edad4ac0deb".into()],
+                preferred_lyric_id: Some("213233970".into()),
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn matches_binary_memory_hash_despite_different_smtc_text_or_missing_duration() {
+        let catalog = Catalog {
+            entries: vec![entry()],
+            issues: vec![],
+        };
+        let result = resolve(&catalog, &identified_session(), None);
+        assert_eq!(result.status, "matchedMemoryHash");
+        assert_eq!(result.document.unwrap().id, "same");
+        let mut session = identified_session();
+        session.lyric_match.as_mut().unwrap().file_hashes[0] =
+            session.lyric_match.as_ref().unwrap().file_hashes[1].to_uppercase();
+        session.lyric_match.as_mut().unwrap().file_hashes[1].clear();
+        assert!(resolve(&catalog, &session, None).document.is_some());
+    }
+
+    #[test]
+    fn constrains_recommended_lyric_id_by_hash_and_refuses_other_recordings() {
+        let first = entry();
+        let mut revision = first.clone();
+        revision.key = "revision".into();
+        revision.filename = revision.filename.replace("-213233970-", "-987-");
+        Arc::make_mut(&mut revision.document).id = "revision".into();
+        let mut wrong_song = first.clone();
+        wrong_song.key = "wrong".into();
+        wrong_song.filename = wrong_song
+            .filename
+            .replace("1e1898733bb33fbee0cd6edad4ac0deb", &"ff".repeat(16));
+        Arc::make_mut(&mut wrong_song.document).id = "wrong".into();
+        let mut catalog = Catalog {
+            entries: vec![wrong_song, revision, first],
+            issues: vec![],
+        };
+        let mut session = identified_session();
+        assert_eq!(
+            resolve(&catalog, &session, None).document.unwrap().id,
+            "same"
+        );
+        assert_eq!(resolve(&catalog, &session, None).candidates.len(), 2);
+        session.lyric_match.as_mut().unwrap().preferred_lyric_id = Some("987".into());
+        assert_eq!(
+            resolve(&catalog, &session, None).document.unwrap().id,
+            "revision"
+        );
+        session.lyric_match.as_mut().unwrap().preferred_lyric_id = None;
+        assert_eq!(resolve(&catalog, &session, None).status, "ambiguous");
+        assert_eq!(resolve(&catalog, &session, Some("wrong")).status, "manual");
+        catalog.entries.reverse();
+        assert_eq!(resolve(&catalog, &session, None).status, "ambiguous");
+
+        session.title = catalog.entries[0].title.clone();
+        session.lyric_match.as_mut().unwrap().file_hashes[0] = "ab".repeat(16);
+        session.lyric_match.as_mut().unwrap().file_hashes[1] = "cd".repeat(16);
+        session.lyric_match.as_mut().unwrap().preferred_lyric_id = Some("213233970".into());
+        assert_eq!(resolve(&catalog, &session, None).status, "missing");
+        assert!(resolve(&catalog, &session, None).document.is_none());
+    }
+
+    #[test]
+    fn zero_or_missing_memory_identity_keeps_existing_filename_fallback() {
+        let cached = entry();
+        let (artist, title) = filename_identity(&cached.filename).unwrap();
+        let mut session = Session {
+            title: title.into(),
+            artist: artist.into(),
+            ..Default::default()
+        };
+        let catalog = Catalog {
+            entries: vec![cached],
+            issues: vec![],
+        };
+        let previous = resolve(&catalog, &session, None).status;
+        session.lyric_match = Some(crate::model::LyricMatch {
+            file_hashes: vec!["0".repeat(32)],
+            ..Default::default()
+        });
+        assert_eq!(resolve(&catalog, &session, None).status, previous);
     }
 }
