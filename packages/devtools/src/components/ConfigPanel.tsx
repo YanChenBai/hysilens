@@ -31,35 +31,19 @@ function stepFor(field: SchemaField): number {
 }
 
 function NumberControl({ id, field, value, onChange }: ControlProps) {
-  const ranged = field.minimum !== undefined && field.maximum !== undefined;
   const step = stepFor(field);
   const current = typeof value === 'number' ? value : Number(field.default ?? 0);
 
   return (
-    <div className="flex items-center gap-3">
-      {ranged ? (
-        <input
-          type="range"
-          aria-label={field.title}
-          className="seek h-2 min-w-0 flex-1 cursor-pointer"
-          min={field.minimum}
-          max={field.maximum}
-          step={step}
-          value={current}
-          onChange={event => onChange(Number(event.target.value))}
-        />
-      ) : null}
-      <Input
-        id={id}
-        type="number"
-        className={ranged ? 'w-24' : undefined}
-        min={field.minimum}
-        max={field.maximum}
-        step={step}
-        value={String(current)}
-        onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))}
-      />
-    </div>
+    <Input
+      id={id}
+      type="number"
+      min={field.minimum}
+      max={field.maximum}
+      step={step}
+      value={String(current)}
+      onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))}
+    />
   );
 }
 

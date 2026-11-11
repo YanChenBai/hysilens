@@ -45,8 +45,9 @@ export default defineConfig({
   description: '可选',
   viewport: { width: 1280, height: 360 }, // 建议的 OBS 画布尺寸，不强制
   entry: 'src/index.ts', // 默认值
-  features: { scale: true, font: { families: ['Example Display'] }, romanization: true },
+  features: { scale: true, romanization: true },
   config: {
+    fontFamily: font({ title: '字体', families: ['Example Display'], default: 'Example Display' }),
     fontSize: number({ title: '字号', min: 16, max: 120, step: 2, default: 48 }),
     color: color({ title: '歌词颜色', default: '#ffffff' }),
     weight: select({ title: '字重', options: { '400': '常规', '700': '粗体' }, default: '700' }),
@@ -63,6 +64,22 @@ export default defineConfig({
   - 宿主保存配置时用它校验。
   - 插件运行时不含 zod。
 - 运行时代码只能用 `import type` 引用 `hysilens.config.ts`。如果用了值导入，构建会失败。
+
+桌面设置面板和插件开发工具中的数值项使用数字输入框，使用声明的范围与步长，不自动替换成滑块。字体、字号、字重、整体缩放和当前行放大倍率集中在顶部的「字号与缩放」分组；调整后点击「保存」应用。
+
+### 字体配置字段
+
+`font()` 与 `text()`、`color()` 一样是插件自己的配置字段，可自定义字段名，也能声明多个字体。它生成字符串 Schema 和字体控件元数据；宿主保存并传递该字符串，插件自行使用，例如 `ctx.config().fontFamily`。无需声明 `features.font`，不会自动修改整个插件的字体。
+
+```ts
+config: {
+  lyricFont: font({ title: '歌词字体', default: 'ZCOOLXiaoWei', families: ['ZCOOLXiaoWei'] }),
+  captionFont: font({ title: '副歌词字体', default: 'Arial' }),
+}
+// 插件中：element.style.fontFamily = JSON.stringify(ctx.config().lyricFont);
+```
+
+旧的 `features.font` 注入方式保留兼容；两个内置插件使用显式 `font()` 字段。
 
 ### features
 
@@ -153,4 +170,6 @@ export default definePlugin<typeof config>({
 | `builtin:tilted` | 透视描边 | 1280 × 720  |
 
 - `builtin:scroll`（`plugins/scroll`）：竖向滚动，支持逐字或整行高亮，可配置歌词颜色、高亮颜色、字号、显示行数、行距和字体。
-- `builtin:tilted`（`plugins/tilted`）：透视描边效果，提供 X／Y／Z 轴旋转、透视距离、文字厚度、字重、描边、阴影和字体配置，按 DOM 实际高度排版。
+- `builtin:tilted`（`plugins/tilted`）：白色字面、深灰描边与柔和投影。整个歌词列作为同一个面，统一使用 1000px 透视距离与 -40° Y 轴侧转；字形和行距共同呈现左小右大。每一行不单独做透视，不做平面旋转或斜切。当前行放大 1.4 倍。字体通过显式 `font()` 字段配置，固定 42px 字号，仅显示原文歌词，自动适应画布。显示行数可通过数字输入框在 1～15 行之间调整，默认五行；另提供歌词、当前行、描边、立体和阴影五个颜色项。
+
+内置滚动歌词默认使用思源黑体风格的 `Noto Sans SC`，透视描边默认使用站酷小薇体（`ZCOOLXiaoWei`）。字体随插件离线加载，均采用 SIL OFL 1.1，授权全文随插件保留在 `fonts/` 中；版权与来源见 [第三方声明](../THIRD_PARTY_NOTICES.md)。滚动歌词之前保存的 `ZCOOLQingKeHuangYou` 选择会使用 Noto Sans SC，其他自选字体保留原选择。

@@ -42,7 +42,12 @@ export function ThemeEditor({
 
   const commonFields = fields.filter(([name]) => ['romanization', 'translation'].includes(name));
 
-  const themeFields = fields.filter(([name]) => name !== 'romanization' && name !== 'translation');
+  const sizingNames = ['fontFamily', 'fontSize', 'fontWeight', 'scale', 'activeScale'];
+  const sizingFields = sizingNames.flatMap(name => fields.filter(([key]) => key === name));
+
+  const themeFields = fields.filter(
+    ([name]) => name !== 'romanization' && name !== 'translation' && !sizingNames.includes(name),
+  );
 
   const themeControls = themeFields.filter(([, field]) => field.type !== 'boolean');
   const themeSwitches = themeFields.filter(([, field]) => field.type === 'boolean');
@@ -103,6 +108,24 @@ export function ThemeEditor({
       }}
     >
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
+        {sizingFields.length ? (
+          <section className="space-y-4 border-t pt-5" aria-labelledby="plugin-sizing-heading">
+            <h3 id="plugin-sizing-heading" className="text-sm font-medium">
+              字号与缩放
+            </h3>
+            <div className="grid gap-5 sm:grid-cols-2">
+              {sizingFields.map(([name, field]) => (
+                <ThemeField
+                  key={name}
+                  name={name}
+                  field={field}
+                  value={values[name]}
+                  onChange={value => setField(name, value)}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
         {commonFields.length ? (
           <section className="space-y-4 border-t pt-5" aria-labelledby="common-display-heading">
             <h3 id="common-display-heading" className="flex items-center gap-2 text-sm font-medium">

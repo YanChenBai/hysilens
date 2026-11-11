@@ -1,4 +1,4 @@
-import { Field, Input, Label, Switch } from '@hysilens/ui';
+import { Field, FieldDescription, Input, Label, Switch } from '@hysilens/ui';
 import type { AnySchemaObject } from 'ajv';
 
 import { Choice } from './Choice';
@@ -45,17 +45,7 @@ function Control({ name, field, value, onChange }: Props) {
   }
 
   if (field.type === 'number' || field.type === 'integer') {
-    return (
-      <Input
-        id={id}
-        type="number"
-        min={field.minimum}
-        max={field.maximum}
-        step={field.multipleOf ?? (field.type === 'integer' ? 1 : 'any')}
-        value={String(current)}
-        onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))}
-      />
-    );
+    return <NumberControl name={name} field={field} value={current} onChange={onChange} />;
   }
 
   if (field.type === 'string') {
@@ -63,6 +53,26 @@ function Control({ name, field, value, onChange }: Props) {
   }
 
   return <p className="text-muted-foreground text-xs">请在主题 JSON 中编辑此项。</p>;
+}
+
+function NumberControl({ name, field, value, onChange }: Props) {
+  const id = `theme-${name}`;
+
+  const step =
+    field['x-hysilens-step'] ?? field.multipleOf ?? (field.type === 'integer' ? 1 : 'any');
+
+  return (
+    <Input
+      id={id}
+      aria-describedby={field.description ? `${id}-description` : undefined}
+      type="number"
+      min={field.minimum}
+      max={field.maximum}
+      step={step}
+      value={String(value)}
+      onChange={event => onChange(event.target.value === '' ? '' : Number(event.target.value))}
+    />
+  );
 }
 
 function StringControl({ name, field, value, onChange }: Props) {
@@ -105,6 +115,11 @@ export function ThemeField(props: Props) {
     >
       <Label htmlFor={`theme-${props.name}`}>{props.field.title ?? props.name}</Label>
       <Control {...props} />
+      {props.field.description ? (
+        <FieldDescription id={`theme-${props.name}-description`}>
+          {String(props.field.description)}
+        </FieldDescription>
+      ) : null}
     </Field>
   );
 }
