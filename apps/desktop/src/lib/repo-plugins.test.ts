@@ -33,27 +33,62 @@ describe('repository plugin configs', () => {
     expect(all.map(plugin => plugin.id)).toEqual(['builtin:scroll', 'builtin:tilted']);
   });
 
-  it('declare unique ids, viewports and host-side scaling', () => {
+  it('declare unique ids and viewports, with host scaling only for scroll', () => {
     expect(new Set(all.map(plugin => plugin.id)).size).toBe(all.length);
 
     for (const plugin of all) {
-      expect(plugin.features.scale).toBe(true);
       expect(plugin.viewport?.width).toBeGreaterThan(0);
       expect(plugin.viewport?.height).toBeGreaterThan(0);
-      expect(loadConfig(plugin, {}).scale).toBe(1);
-      expect(checkConfig(plugin, { scale: 1.15 }).scale).toBe(1.15);
-      rejects(plugin, { scale: 0 });
-      rejects(plugin, { scale: 4 });
     }
+
+    const plugin = manifest(scroll);
+    expect(plugin.features.scale).toBe(true);
+    expect(loadConfig(plugin, {}).scale).toBe(1);
+    expect(checkConfig(plugin, { scale: 1.15 }).scale).toBe(1.15);
+    rejects(plugin, { scale: 0 });
+    rejects(plugin, { scale: 4 });
   });
 
   it('validate line counts and colors', () => {
     for (const plugin of all) {
-      rejects(plugin, { visibleLines: 2.5 });
-      rejects(plugin, { visibleLines: 0 });
       rejects(plugin, { color: 'red' });
-      expect(checkConfig(plugin, { visibleLines: 4 }).visibleLines).toBe(4);
     }
+
+    const plugin = manifest(scroll);
+    rejects(plugin, { visibleLines: 2.5 });
+    rejects(plugin, { visibleLines: 0 });
+    expect(checkConfig(plugin, { visibleLines: 4 }).visibleLines).toBe(4);
+  });
+
+  it('exposes font, colors and line count for tilted while dropping old geometry and scale', () => {
+    const plugin = manifest(tilted);
+    expect(plugin.features.font).toBeUndefined();
+
+    const saved = loadConfig(plugin, {
+      rotateX: -4,
+      rotateY: -48,
+      activeScale: 1.2,
+      scale: 2,
+      fontSize: 80,
+      color: '#abcdef',
+    });
+
+    expect(Object.keys(saved).sort()).toEqual([
+      'activeColor',
+      'color',
+      'depthColor',
+      'fontFamily',
+      'shadowColor',
+      'strokeColor',
+      'visibleLines',
+    ]);
+    expect(saved.color).toBe('#abcdef');
+    expect(saved.visibleLines).toBe(5);
+    expect(saved.fontFamily).toBe('ZCOOLXiaoWei');
+    expect(checkConfig(plugin, { fontFamily: 'Arial' }).fontFamily).toBe('Arial');
+    expect(checkConfig(plugin, { visibleLines: 3 }).visibleLines).toBe(3);
+    rejects(plugin, { visibleLines: 0 });
+    rejects(plugin, { visibleLines: 2.5 });
   });
 
   it('offer reveal mode only where the renderer implements it', () => {

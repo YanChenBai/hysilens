@@ -95,7 +95,7 @@ function Lyrics({
       style={
         {
           color: theme.color,
-          fontFamily: `${JSON.stringify(theme.fontFamily)}, sans-serif`,
+          fontFamily: `${JSON.stringify(theme.fontFamily === 'ZCOOLQingKeHuangYou' ? 'Noto Sans SC' : theme.fontFamily)}, 'Noto Sans SC', sans-serif`,
           '--color': theme.color,
           '--active': theme.activeColor,
           '--font-size': `${theme.fontSize}px`,

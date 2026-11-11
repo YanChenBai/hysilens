@@ -2,6 +2,7 @@ import { definePlugin } from '@hysilens/plugin';
 import type { ConfigOf, LyricDocument } from '@hysilens/plugin';
 
 import type config from '../hysilens.config';
+import { preset } from './preset';
 
 import './style.css';
 
@@ -23,40 +24,30 @@ function div(className: string) {
 }
 
 function textShadow(theme: Theme): string {
-  const shadowAlpha = Math.round(theme.shadowOpacity * 255)
+  const shadowAlpha = Math.round(preset.shadowOpacity * 255)
     .toString(16)
     .padStart(2, '0');
 
-  const shadows = Array.from({ length: Math.ceil(theme.depth * 2) }, (_, index) => {
-    const offset = Math.min(theme.depth, (index + 1) / 2);
+  const shadows = Array.from({ length: Math.ceil(preset.depth * 2) }, (_, index) => {
+    const offset = Math.min(preset.depth, (index + 1) / 2);
 
     return `${offset}px ${offset}px 0 ${theme.depthColor}`;
   });
 
-  if (theme.shadow) {
+  if (preset.shadow) {
     shadows.push(
-      `${theme.shadowX}px ${theme.shadowY}px ${theme.shadowBlur}px ${theme.shadowColor}${shadowAlpha}`,
+      `${preset.shadowX}px ${preset.shadowY}px ${preset.shadowBlur}px ${theme.shadowColor}${shadowAlpha}`,
     );
   }
 
   return shadows.join(', ') || 'none';
 }
 
-function secondary(lyrics: LyricDocument | null, kind: string, time: number) {
-  return lyrics?.tracks
-    .find(track => track.kind === kind)
-    ?.lines.find(line => line.startMs <= time && (line.endMs === null || line.endMs > time))
-    ?.text.trim();
-}
+function lyricFace(text: string) {
+  const original = div('original');
+  original.textContent = text;
 
-function addText(parent: HTMLElement, text: string | undefined, className: string) {
-  if (!text) {
-    return;
-  }
-
-  const node = div(className);
-  node.textContent = text;
-  parent.append(node);
+  return original;
 }
 
 /** DOM-measured layout: rebuilt on theme or document changes, re-focused on line changes. */
@@ -79,22 +70,20 @@ function createStage(container: HTMLElement) {
 
   function applyTheme(theme: Theme) {
     Object.assign(stage.style, {
-      fontFamily: `${JSON.stringify(theme.fontFamily)}, serif`,
-      fontSize: `${theme.fontSize}px`,
-      fontWeight: theme.fontWeight,
+      fontFamily: `${JSON.stringify(theme.fontFamily)}, 'ZCOOLXiaoWei', serif`,
+      fontSize: `${preset.fontSize}px`,
+      fontWeight: preset.fontWeight,
       color: theme.color,
     });
 
     const variables = {
-      '--perspective': `${theme.perspective}px`,
-      '--rotate-x': `${theme.rotateX}deg`,
-      '--rotate-y': `${theme.rotateY}deg`,
-      '--tilt': `${theme.tilt}deg`,
-      '--skew': `${theme.skew}deg`,
-      '--line-gap': `${theme.lineGap}px`,
+      '--perspective': `${preset.perspective}px`,
+      '--rotate-y': `${preset.rotateY}deg`,
+      '--line-gap': `${preset.lineGap}px`,
       '--active-color': theme.activeColor,
-      '--inactive-opacity': String(theme.inactiveOpacity),
-      '--stroke-width': `${theme.strokeWidth}px`,
+      '--active-scale': String(preset.activeScale),
+      '--inactive-opacity': String(preset.inactiveOpacity),
+      '--stroke-width': `${preset.strokeWidth}px`,
       '--stroke-color': theme.strokeColor,
       '--text-shadow': textShadow(theme),
     };
@@ -109,15 +98,7 @@ function createStage(container: HTMLElement) {
     const lines = state.document?.tracks.find(track => track.kind === 'original')?.lines ?? [];
     rows = lines.map(line => {
       const row = div('line');
-      addText(row, line.text, 'original');
-
-      if (state.theme.romanization) {
-        addText(row, secondary(state.document, 'romanization', line.startMs), 'secondary');
-      }
-
-      if (state.theme.translation) {
-        addText(row, secondary(state.document, 'translation', line.startMs), 'secondary');
-      }
+      row.append(lyricFace(line.text));
 
       return row;
     });
@@ -125,13 +106,16 @@ function createStage(container: HTMLElement) {
   }
 
   function layout() {
-    if (!current) {
+    if (!current || stage.hidden || plane.clientWidth === 0) {
       return;
     }
 
     const count = current.theme.visibleLines;
     const start = Math.max(0, focused - Math.floor(count / 2));
     const visible = rows.slice(start, start + count);
+    rows.forEach((row, index) => {
+      row.classList.toggle('in-window', index >= start && index < start + count);
+    });
     const first = visible[0];
     const last = visible.at(-1);
 
@@ -139,8 +123,30 @@ function createStage(container: HTMLElement) {
       return;
     }
 
-    viewport.style.height = `${last.offsetTop + last.offsetHeight - first.offsetTop}px`;
-    track.style.transform = `translateY(-${first.offsetTop}px)`;
+    // Include the scaled row's visual bounds, especially when only one row is displayed.
+    const active = rows[focused];
+    const expansion = active ? (active.offsetHeight * (preset.activeScale - 1)) / 2 : 0;
+    const top = active ? Math.min(first.offsetTop, active.offsetTop - expansion) : first.offsetTop;
+
+    const bottom = Math.max(
+      last.offsetTop + last.offsetHeight,
+      active ? active.offsetTop + active.offsetHeight + expansion : 0,
+    );
+
+    viewport.style.height = `${bottom - top}px`;
+    track.style.transform = `translateY(${-top}px)`;
+
+    // Fit the whole projected lyric plane inside the available canvas.
+    plane.style.setProperty('--fit', '1');
+    const bounds = plane.getBoundingClientRect();
+
+    const fit = Math.min(
+      1,
+      (stage.clientWidth - 48) / bounds.width,
+      (stage.clientHeight - 48) / bounds.height,
+    );
+
+    plane.style.setProperty('--fit', String(Math.max(0.01, fit)));
   }
 
   function render(state: State) {

@@ -88,3 +88,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+# Bundled lyric fonts
+
+The scroll plugin bundles Noto Sans SC (Copyright 2014-2021 Adobe, with Reserved Font Name 'Source'), from [Google Fonts](https://github.com/google/fonts/tree/main/ofl/notosanssc), under [SIL OFL 1.1](plugins/scroll/public/fonts/NotoSansSC-OFL.txt).
+
+The tilted plugin bundles ZCOOL XiaoWei (Copyright 2018 The ZCOOL XiaoWei Project Authors), from [Google Fonts](https://github.com/google/fonts/tree/main/ofl/zcoolxiaowei), under [SIL OFL 1.1](plugins/tilted/public/fonts/ZCOOLXiaoWei-OFL.txt).
+
+These are unmodified upstream font files downloaded 2026-11-11. Full copyright and license notices ship in each plugin's `fonts/` directory. OFL permits commercial use and bundling with software under its terms; font files may not be sold by themselves. The project license does not replace the font licenses.
