@@ -7,8 +7,7 @@ body {
   margin: 0;
 }
 .tilted {
-  display: grid;
-  place-items: center;
+  position: relative;
   width: 100%;
   height: 100vh;
   overflow: hidden;
@@ -17,16 +16,19 @@ body {
   display: none;
 }
 .plane {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   width: calc(100% - 72px);
   min-width: 0;
   /* Project the entire column as ONE face: glyphs and row spacing share the same depth. */
-  transform: scale(var(--fit, 1)) perspective(var(--perspective)) rotateY(var(--rotate-y));
+  transform: translate(-50%, -50%) scale(var(--fit, 1)) perspective(var(--perspective))
+    rotateY(var(--rotate-y));
   transform-origin: center;
 }
 .viewport {
   width: 100%;
   overflow: hidden;
-  transition: height 380ms ease;
 }
 .track {
   position: relative;

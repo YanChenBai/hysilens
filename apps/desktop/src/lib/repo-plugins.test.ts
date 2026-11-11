@@ -73,22 +73,52 @@ describe('repository plugin configs', () => {
       color: '#abcdef',
     });
 
-    expect(Object.keys(saved).sort()).toEqual([
-      'activeColor',
-      'color',
-      'depthColor',
-      'fontFamily',
-      'shadowColor',
-      'strokeColor',
-      'visibleLines',
-    ]);
+    for (const key of ['rotateX', 'rotateY', 'activeScale', 'scale']) {
+      expect(saved).not.toHaveProperty(key);
+    }
+
     expect(saved.color).toBe('#abcdef');
     expect(saved.visibleLines).toBe(5);
     expect(saved.fontFamily).toBe('ZCOOLXiaoWei');
+    expect(saved.fontSize).toBe(80);
+    expect(loadConfig(plugin, {}).fontSize).toBe(42);
+    rejects(plugin, { fontSize: 0 });
+    rejects(plugin, { fontSize: 97 });
     expect(checkConfig(plugin, { fontFamily: 'Arial' }).fontFamily).toBe('Arial');
     expect(checkConfig(plugin, { visibleLines: 3 }).visibleLines).toBe(3);
     rejects(plugin, { visibleLines: 0 });
     rejects(plugin, { visibleLines: 2.5 });
+  });
+
+  it('accepts configurable tilted text appearance and validates effect bounds', () => {
+    const plugin = manifest(tilted);
+
+    const appearance = {
+      fontSize: 56,
+      fontWeight: 600,
+      lineGap: 20,
+      inactiveOpacity: 0.4,
+      strokeWidth: 2.5,
+      depth: 3,
+      shadow: false,
+      shadowOpacity: 0.6,
+      shadowBlur: 8,
+      shadowX: -2,
+      shadowY: 5,
+    };
+
+    expect(checkConfig(plugin, appearance)).toMatchObject(appearance);
+
+    for (const value of [
+      { strokeWidth: -1 },
+      { depth: 13 },
+      { shadowOpacity: 2 },
+      { shadowBlur: -1 },
+      { shadowX: 31 },
+      { shadow: 'false' },
+    ]) {
+      rejects(plugin, value);
+    }
   });
 
   it('offer reveal mode only where the renderer implements it', () => {

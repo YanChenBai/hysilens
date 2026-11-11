@@ -2,6 +2,7 @@ import { definePlugin } from '@hysilens/plugin';
 import type { ConfigOf, LyricDocument } from '@hysilens/plugin';
 
 import type config from '../hysilens.config';
+import { centeredWindow } from './layout';
 import { preset } from './preset';
 
 import './style.css';
@@ -24,19 +25,19 @@ function div(className: string) {
 }
 
 function textShadow(theme: Theme): string {
-  const shadowAlpha = Math.round(preset.shadowOpacity * 255)
+  const shadowAlpha = Math.round(theme.shadowOpacity * 255)
     .toString(16)
     .padStart(2, '0');
 
-  const shadows = Array.from({ length: Math.ceil(preset.depth * 2) }, (_, index) => {
-    const offset = Math.min(preset.depth, (index + 1) / 2);
+  const shadows = Array.from({ length: Math.ceil(theme.depth * 2) }, (_, index) => {
+    const offset = Math.min(theme.depth, (index + 1) / 2);
 
     return `${offset}px ${offset}px 0 ${theme.depthColor}`;
   });
 
-  if (preset.shadow) {
+  if (theme.shadow) {
     shadows.push(
-      `${preset.shadowX}px ${preset.shadowY}px ${preset.shadowBlur}px ${theme.shadowColor}${shadowAlpha}`,
+      `${theme.shadowX}px ${theme.shadowY}px ${theme.shadowBlur}px ${theme.shadowColor}${shadowAlpha}`,
     );
   }
 
@@ -71,19 +72,19 @@ function createStage(container: HTMLElement) {
   function applyTheme(theme: Theme) {
     Object.assign(stage.style, {
       fontFamily: `${JSON.stringify(theme.fontFamily)}, 'ZCOOLXiaoWei', serif`,
-      fontSize: `${preset.fontSize}px`,
-      fontWeight: preset.fontWeight,
+      fontSize: `${theme.fontSize}px`,
+      fontWeight: String(theme.fontWeight),
       color: theme.color,
     });
 
     const variables = {
       '--perspective': `${preset.perspective}px`,
       '--rotate-y': `${preset.rotateY}deg`,
-      '--line-gap': `${preset.lineGap}px`,
+      '--line-gap': `${theme.lineGap}px`,
       '--active-color': theme.activeColor,
       '--active-scale': String(preset.activeScale),
-      '--inactive-opacity': String(preset.inactiveOpacity),
-      '--stroke-width': `${preset.strokeWidth}px`,
+      '--inactive-opacity': String(theme.inactiveOpacity),
+      '--stroke-width': `${theme.strokeWidth}px`,
       '--stroke-color': theme.strokeColor,
       '--text-shadow': textShadow(theme),
     };
@@ -105,36 +106,34 @@ function createStage(container: HTMLElement) {
     track.replaceChildren(...rows);
   }
 
-  function layout() {
+  function layout(snap = false) {
     if (!current || stage.hidden || plane.clientWidth === 0) {
       return;
     }
 
-    const count = current.theme.visibleLines;
-    const start = Math.max(0, focused - Math.floor(count / 2));
-    const visible = rows.slice(start, start + count);
-    rows.forEach((row, index) => {
-      row.classList.toggle('in-window', index >= start && index < start + count);
-    });
-    const first = visible[0];
-    const last = visible.at(-1);
+    const window = centeredWindow(
+      rows.map(row => ({ top: row.offsetTop, height: row.offsetHeight })),
+      focused,
+      current.theme.visibleLines,
+      preset.activeScale,
+    );
 
-    if (!first || !last) {
+    if (!window) {
+      viewport.style.height = '0px';
+
       return;
     }
 
-    // Include the scaled row's visual bounds, especially when only one row is displayed.
-    const active = rows[focused];
-    const expansion = active ? (active.offsetHeight * (preset.activeScale - 1)) / 2 : 0;
-    const top = active ? Math.min(first.offsetTop, active.offsetTop - expansion) : first.offsetTop;
+    rows.forEach((row, index) => {
+      row.classList.toggle('in-window', index >= window.start && index < window.end);
+    });
 
-    const bottom = Math.max(
-      last.offsetTop + last.offsetHeight,
-      active ? active.offsetTop + active.offsetHeight + expansion : 0,
-    );
+    if (snap) {
+      track.style.transition = 'none';
+    }
 
-    viewport.style.height = `${bottom - top}px`;
-    track.style.transform = `translateY(${-top}px)`;
+    viewport.style.height = `${window.height}px`;
+    track.style.transform = `translateY(${window.translateY}px)`;
 
     // Fit the whole projected lyric plane inside the available canvas.
     plane.style.setProperty('--fit', '1');
@@ -147,6 +146,11 @@ function createStage(container: HTMLElement) {
     );
 
     plane.style.setProperty('--fit', String(Math.max(0.01, fit)));
+
+    // bounds above flushes the new track position before transitions are restored.
+    if (snap) {
+      track.style.removeProperty('transition');
+    }
   }
 
   function render(state: State) {
@@ -179,18 +183,20 @@ function createStage(container: HTMLElement) {
       row.classList.toggle('current', index === focused);
       row.setAttribute('aria-current', String(index === focused));
     });
-    layout();
+    layout(changed);
   }
 
-  const observer = new ResizeObserver(layout);
+  const relayout = () => layout(true);
+  const observer = new ResizeObserver(relayout);
   observer.observe(plane);
-  document.fonts.addEventListener('loadingdone', layout);
+  observer.observe(stage);
+  document.fonts.addEventListener('loadingdone', relayout);
 
   return {
     render,
     dispose() {
       observer.disconnect();
-      document.fonts.removeEventListener('loadingdone', layout);
+      document.fonts.removeEventListener('loadingdone', relayout);
       stage.remove();
     },
   };
