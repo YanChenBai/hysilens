@@ -254,6 +254,10 @@ pub async fn serve_on(
         .route("/api/fonts", get(system_fonts))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/dialog/directory", post(pick_directory))
+        .route(
+            "/api/diagnostics/kugou/export",
+            post(export_kugou_diagnostics),
+        )
         .route("/api/catalog", get(get_catalog))
         .route("/api/events", get(events))
         .route("/api/plugins", get(plugin_list))
@@ -577,6 +581,60 @@ async fn system_fonts() -> Response {
         Ok(fonts) => Json(fonts).into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
     }
+}
+
+async fn export_kugou_diagnostics(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    #[cfg(windows)]
+    {
+        let snapshots = state.snapshots.clone();
+        let result = tokio::task::spawn_blocking(move || -> anyhow::Result<Option<String>> {
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            let Some(path) = rfd::FileDialog::new()
+                .set_title("导出酷狗诊断报告")
+                .add_filter("JSON 诊断报告", &["json"])
+                .set_file_name(format!("hysilens-kugou-{timestamp}.json"))
+                .save_file()
+            else {
+                return Ok(None);
+            };
+            let before = diagnostic_runtime_snapshot(snapshots.borrow().as_ref());
+            let mut report = crate::platforms::kugou::diagnostic_report();
+            report["runtimeBefore"] = before;
+            report["runtimeAfter"] = diagnostic_runtime_snapshot(snapshots.borrow().as_ref());
+            std::fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
+            Ok(Some(path.to_string_lossy().into_owned()))
+        })
+        .await;
+        match result {
+            Ok(Ok(path)) => Json(serde_json::json!({ "path": path })).into_response(),
+            Ok(Err(error)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}")).into_response()
+            }
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+    #[cfg(not(windows))]
+    (StatusCode::NOT_IMPLEMENTED, "酷狗诊断报告仅支持 Windows").into_response()
+}
+
+#[cfg(windows)]
+fn diagnostic_runtime_snapshot(snapshot: &Snapshot) -> serde_json::Value {
+    serde_json::json!({
+        "capturedUnixMs": SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
+        "hysilensVersion": env!("CARGO_PKG_VERSION"),
+        "protocolVersion": snapshot.version,
+        "epoch": snapshot.epoch,
+        "seq": snapshot.seq,
+        "generation": snapshot.generation,
+        "source": snapshot.source,
+        "playback": snapshot.playback,
+        "session": snapshot.session,
+        "lyricsStatus": snapshot.lyrics_status,
+        "cacheIssues": snapshot.cache_issues,
+    })
 }
 
 #[derive(serde::Deserialize)]

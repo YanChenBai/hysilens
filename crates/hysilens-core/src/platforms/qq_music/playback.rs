@@ -26,8 +26,16 @@ impl Probe {
                 CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
             }
 
-            let manager =
-                GlobalSystemMediaTransportControlsSessionManager::RequestAsync()?.join()?;
+            let manager = match GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
+                .and_then(|request| request.join())
+            {
+                Ok(manager) => manager,
+                Err(error) => {
+                    // Balance successful initialization even when no probe is returned.
+                    unsafe { CoUninitialize() };
+                    return Err(error.into());
+                }
+            };
 
             Ok(Self {
                 origin,

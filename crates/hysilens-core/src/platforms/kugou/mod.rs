@@ -3,8 +3,11 @@ pub mod lyrics;
 #[cfg(windows)]
 mod memory;
 
+#[cfg(windows)]
+pub use memory::diagnostic_report;
+
 use super::{Adapter, Descriptor, LyricsMode, Registration, Sample};
-use crate::model::{Playback, Source};
+use crate::model::{Playback, Session, Source};
 use std::{
     path::PathBuf,
     time::{Instant, SystemTime, UNIX_EPOCH},
@@ -106,7 +109,7 @@ impl Probe {
             )
         };
         #[cfg(not(windows))]
-        let timeline: anyhow::Result<(f64, f64)> =
+        let timeline: anyhow::Result<(f64, Option<f64>)> =
             Err(anyhow::anyhow!("酷狗内存读取仅支持 Windows"));
         match timeline {
             Ok((position, duration)) => {
@@ -121,22 +124,7 @@ impl Probe {
                                 && elapsed >= 50.0
                                 && (0.8..=1.2).contains(&((position - old_position) / elapsed))
                         });
-                // 尚未加载歌曲时可能读到 0/0；保留连接，等待下一次采样。
-                session.position_ms = (duration > 0.0).then_some(position.min(duration));
-                session.source_position_ms = session.position_ms;
-                session.duration_ms = (duration > 0.0).then_some(duration);
-                session.source_updated_unix_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .ok()
-                    .map(|time| time.as_secs_f64() * 1000.0);
-                session.rate =
-                    (normal && duration > 0.0 && session.status == "playing").then_some(1.0);
-                session.rate_basis = if session.rate.is_some() {
-                    "inferredNormal"
-                } else {
-                    "unavailable"
-                }
-                .into();
+                apply_timeline(session, position, duration, normal);
                 self.previous =
                     Some((session.title.clone(), session.artist.clone(), position, now));
             }
@@ -158,11 +146,66 @@ impl Probe {
     }
 }
 
+fn apply_timeline(session: &mut Session, position: f64, duration: Option<f64>, normal: bool) {
+    // 时长链可能读错堆对象字段，而独立的 kgplayer.dll 进度仍正常推进。
+    // 缺少时长不是播放错误：发布真实进度、清除旧歌时长，不拿错误时长截断进度；
+    // 连续进度采样仍可确认正常播放速率，时长链恢复后下一帧直接补回时长。
+    session.position_ms = Some(position);
+    session.source_position_ms = Some(position);
+    session.duration_ms = duration;
+    session.source_updated_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|time| time.as_secs_f64() * 1000.0);
+    session.rate = (normal && session.status == "playing").then_some(1.0);
+    session.rate_basis = if session.rate.is_some() {
+        "inferredNormal"
+    } else {
+        "unavailable"
+    }
+    .into();
+    session.error = None;
+}
+
 impl Adapter for Probe {
     fn sample(&mut self) -> Sample {
         Sample {
             playback: self.sample(),
             document: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publishes_position_and_playback_rate_without_duration() {
+        let mut session = Session {
+            status: "playing".into(),
+            duration_ms: Some(563.0),
+            error: Some("old duration error".into()),
+            ..Default::default()
+        };
+        apply_timeline(&mut session, 123548.812, None, true);
+        assert_eq!(session.position_ms, Some(123548.812));
+        assert_eq!(session.source_position_ms, session.position_ms);
+        assert_eq!(session.duration_ms, None);
+        assert_eq!(session.rate, Some(1.0));
+        assert_eq!(session.rate_basis, "inferredNormal");
+        assert!(session.source_updated_unix_ms.is_some());
+        assert!(session.error.is_none());
+
+        session.status = "paused".into();
+        apply_timeline(&mut session, 123548.812, None, true);
+        assert_eq!(session.position_ms, Some(123548.812));
+        assert_eq!(session.rate, None);
+
+        session.status = "playing".into();
+        apply_timeline(&mut session, 90000.0, Some(174000.0), false);
+        assert_eq!(session.position_ms, Some(90000.0));
+        assert_eq!(session.duration_ms, Some(174000.0));
+        assert_eq!(session.rate, None);
     }
 }

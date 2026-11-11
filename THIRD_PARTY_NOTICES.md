@@ -63,6 +63,8 @@ The module offsets, pointer chain, process selection and checked memory reads in
 `src/AFMediaBar/Classes/Services/Media/Sources/KuGou/KuGou.cs` and
 `src/AFMediaBar/Classes/Services/Win32/Memory.cs`, revision
 `1420ffb7993634ea7bfe7ae3858a90f65b778f3f`.
+The preferred duration chain for KuGou 20.1.61.28014 also follows `KuGou.cs`
+at revision `8e0564f91e10541eed321681ddf72da024e3fa6f` of the same project.
 The KuGou implementation was contributed by Miaoyww in
 [PR #83](https://github.com/Fervent-Tempo/AF-Media-Bar/pull/83).
 The Rust adaptation reads process memory only; it does not inject code or modify the player.

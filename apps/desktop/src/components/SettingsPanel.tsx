@@ -8,6 +8,7 @@ import { getJson, putJson } from '../lib/api';
 import { getDesktopBridge } from '../lib/local-overlay';
 import { DirectoryInput } from './DirectoryInput';
 import { FooterActions } from './FooterActions';
+import { KugouDiagnostics } from './KugouDiagnostics';
 import { LocalOverlayControls } from './LocalOverlayControls';
 
 export function SettingsPanel() {
@@ -117,6 +118,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             <FieldDescription>更改后，需要更新 OBS 浏览器源地址。</FieldDescription>
           </Field>
         </form>
+        <KugouDiagnostics />
       </div>
       <FooterActions>
         <FieldError show={Boolean(save.error)}>{save.error?.message}</FieldError>

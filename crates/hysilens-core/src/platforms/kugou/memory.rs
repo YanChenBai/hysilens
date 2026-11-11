@@ -13,6 +13,10 @@ use windows::Win32::{
 };
 use windows::core::{PCWSTR, w};
 
+#[path = "diagnostics.rs"]
+mod diagnostics;
+pub use diagnostics::report as diagnostic_report;
+
 #[derive(Clone, Copy)]
 struct Layout {
     position_offset: usize,
@@ -36,13 +40,27 @@ const LEGACY_LAYOUTS: &[Layout] = &[
     },
 ];
 
-// 20.1.61.28014：已用两首不同歌曲核对时长，并确认进度连续递增。
-const V20161_LAYOUTS: &[Layout] = &[Layout {
+// kgplayer.dll 1.2.0.523 / kugou.dll 20.1.61.28014：进度为 f64 秒，时长末端为 i32 毫秒。
+// 短链来自 AF Media Bar 对该模块版本的适配，因此优先；并非遍历更短就一定可靠。
+// 来源：https://github.com/Fervent-Tempo/AF-Media-Bar/blob/8e0564f91e10541eed321681ddf72da024e3fa6f/src/AFMediaBar/Classes/Services/Media/Sources/KuGou/KuGou.cs
+const V20161_LAYOUT: Layout = Layout {
     position_offset: 0x3949f8,
     duration_offset: 0x02434b30,
-    duration_chain: &[0x130, 0x130, 0x2a4],
+    duration_chain: &[0x108, 0x8c],
     duration_units_per_second: 1000.0,
-}];
+};
+
+const V20161_LAYOUTS: &[Layout] = &[
+    V20161_LAYOUT,
+    Layout {
+        // 长链曾在本机读到正确值，保留以兼容短链读失败或校验失败的运行状态；
+        // 不把它当作第二份独立确认，也不因一次成功就切换为永久首选。
+        // 异常报告中两条链都曾落到堆指针的高 32 位，读出 528/563 等假毫秒值，
+        // 即使 DLL 版本和 SHA-256 相同也会发生。两条链都必须逐次校验，均失败时放弃时长。
+        duration_chain: &[0x130, 0x130, 0x2a4],
+        ..V20161_LAYOUT
+    },
+];
 
 fn layouts(
     position_version: [u16; 4],
@@ -130,17 +148,8 @@ impl Reader {
             if name.eq_ignore_ascii_case("KuGou.exe") || name.eq_ignore_ascii_case("KuGouMusic.exe")
             {
                 let candidate = Self::open(entry.th32ProcessID).and_then(|mut reader| {
-                    // 同一版本可能有多个已知布局；实际走通时间轴后才采用。
-                    let mut errors = Vec::new();
-                    for layout in reader.layouts {
-                        reader.layout = *layout;
-                        match reader.timeline() {
-                            Ok(_) => return Ok(reader),
-                            Err(error) => errors
-                                .push(format!("时长入口 {:#x}: {error:#}", layout.duration_offset)),
-                        }
-                    }
-                    anyhow::bail!("{}", errors.join("；"))
+                    reader.select_layout()?;
+                    Ok(reader)
                 });
                 match candidate {
                     Ok(reader) => return Ok(reader),
@@ -155,6 +164,23 @@ impl Reader {
         }
         ensure!(!failures.is_empty(), "未找到酷狗进程，请启动酷狗并播放歌曲");
         anyhow::bail!("无法读取酷狗播放进度：{}", failures.join("；"))
+    }
+
+    fn select_layout(&mut self) -> anyhow::Result<()> {
+        // 进度与时长位于不同 DLL，时长链失败不能证明进度地址失效。
+        // 连接只要求进度有效；保留读句柄，允许后续采样在时长恢复后自行读到有效值。
+        let position = self.position()?;
+        for layout in self.layouts {
+            if self
+                .duration(*layout)
+                .and_then(|duration| validate_timeline(position, duration))
+                .is_ok()
+            {
+                self.layout = *layout;
+                break;
+            }
+        }
+        Ok(())
     }
 
     fn open(pid: u32) -> anyhow::Result<Self> {
@@ -221,13 +247,27 @@ impl Reader {
         Ok(bytes)
     }
 
-    pub fn timeline(&self) -> anyhow::Result<(f64, f64)> {
+    fn position(&self) -> anyhow::Result<f64> {
         let position = f64::from_le_bytes(
-            self.read(self.position_base + self.layout.position_offset)
-                .context("无法读取 kgplayer.dll 播放进度")?,
+            self.read(
+                self.position_base
+                    .checked_add(self.layout.position_offset)
+                    .context("酷狗进度地址溢出")?,
+            )
+            .context("无法读取 kgplayer.dll 播放进度")?,
         );
-        let mut address = self.duration_base + self.layout.duration_offset;
-        for offset in self.layout.duration_chain {
+        validate_position(position)?;
+        Ok(position)
+    }
+
+    fn duration(&self, layout: Layout) -> anyhow::Result<f64> {
+        // 从 kugou.dll 的模块相对入口开始，每一级先读 64 位指针再加偏移；
+        // 最后地址保存的是 i32 数值，不再解引用。这里的偏移顺序与 CE XML 的存储顺序相反。
+        let mut address = self
+            .duration_base
+            .checked_add(layout.duration_offset)
+            .context("酷狗时长地址溢出")?;
+        for offset in layout.duration_chain {
             let pointer = u64::from_le_bytes(
                 self.read(address)
                     .context("无法读取 kugou.dll 时长指针链")?,
@@ -239,11 +279,43 @@ impl Reader {
         let duration = f64::from(i32::from_le_bytes(
             self.read(address).context("无法读取酷狗歌曲时长")?,
         ));
-        validate_timeline(position, duration / self.layout.duration_units_per_second)
+        Ok(duration / layout.duration_units_per_second)
+    }
+
+    /// 返回毫秒进度和可选毫秒时长；仅进度读取失败会使整个采样失败。
+    pub fn timeline(&self) -> anyhow::Result<(f64, Option<f64>)> {
+        let position = self.position()?;
+        let layouts = if self.layouts.is_empty() {
+            std::slice::from_ref(&self.layout)
+        } else {
+            self.layouts
+        };
+        // 每次重新从短链开始，失败再试长链；不缓存上次时长或永久选中上次成功的链，
+        // 避免切歌后沿用旧歌时长。全部失败返回 None，不能用假时长裁剪有效进度。
+        // 原始数值、逐级读取错误与两条链的采样仍由按需诊断报告完整保留。
+        let duration = layouts.iter().find_map(|layout| {
+            self.duration(*layout)
+                .and_then(|duration| validate_timeline(position, duration))
+                .ok()
+                .map(|(_, duration)| duration)
+                .filter(|duration| *duration > 0.0 && *duration >= position * 1000.0)
+        });
+        Ok((position * 1000.0, duration))
     }
 }
 
+fn validate_position(position: f64) -> anyhow::Result<()> {
+    ensure!(
+        position.is_finite() && (0.0..=86402.0).contains(&position),
+        "酷狗播放进度数值无效 (进度 {position} 秒)"
+    );
+    Ok(())
+}
+
 fn validate_timeline(position: f64, duration: f64) -> anyhow::Result<(f64, f64)> {
+    // 这只是数值合理性检查，不是歌曲身份或地址正确性的证明。比如 563 毫秒的误读
+    // 在歌曲刚开始时仍可能暂时通过；不能据此认定两条链在同版本的所有电脑上都可靠。
+    // 这里允许切换状态下的两秒边界偏差；timeline() 发布时长时还要求它不小于实际进度。
     ensure!(
         position.is_finite()
             && position >= 0.0
@@ -326,7 +398,91 @@ mod tests {
                 layouts: &[],
                 layout: *layout,
             };
-            assert_eq!(reader.timeline().unwrap(), (21500.0, 209000.0));
+            assert_eq!(reader.timeline().unwrap(), (21500.0, Some(209000.0)));
+        }
+    }
+
+    #[test]
+    fn prefers_short_chain_and_falls_back_after_read_or_validation_failure() {
+        use super::{Handle, OpenProcess, PROCESS_VM_READ, Reader, V20161_LAYOUTS};
+
+        for (preferred, fallback, expected) in [
+            (Some(210000i32), Some(209000i32), Some((0, 210000.0))),
+            (Some(528), Some(209000), Some((1, 209000.0))),
+            (None, Some(209000), Some((1, 209000.0))),
+            (Some(528), Some(563), None),
+            (None, None, None),
+        ] {
+            let position = Box::new(21.5f64);
+            let mut short_leaf = [0u8; 0x90];
+            short_leaf[0x8c..].copy_from_slice(&preferred.unwrap_or_default().to_le_bytes());
+            let mut long_leaf = [0u8; 0x2a8];
+            long_leaf[0x2a4..].copy_from_slice(&fallback.unwrap_or_default().to_le_bytes());
+            let mut middle = [0u8; 0x138];
+            middle[0x130..].copy_from_slice(&(long_leaf.as_ptr() as u64).to_le_bytes());
+            let mut shared = [0u8; 0x138];
+            if preferred.is_some() {
+                shared[0x108..0x110].copy_from_slice(&(short_leaf.as_ptr() as u64).to_le_bytes());
+            }
+            if fallback.is_some() {
+                shared[0x130..].copy_from_slice(&(middle.as_ptr() as u64).to_le_bytes());
+            }
+            let root = Box::new(shared.as_ptr() as u64);
+            let mut reader = Reader {
+                // SAFETY: all target allocations belong to this test and outlive the reads.
+                handle: Handle(unsafe {
+                    OpenProcess(PROCESS_VM_READ, false, std::process::id()).unwrap()
+                }),
+                position_base: (&*position as *const f64 as usize)
+                    - V20161_LAYOUTS[0].position_offset,
+                duration_base: (&*root as *const u64 as usize) - V20161_LAYOUTS[0].duration_offset,
+                layouts: V20161_LAYOUTS,
+                layout: V20161_LAYOUTS[0],
+            };
+            let result = reader.select_layout();
+            if let Some((index, duration)) = expected {
+                result.unwrap();
+                assert_eq!(
+                    reader.layout.duration_chain,
+                    V20161_LAYOUTS[index].duration_chain
+                );
+                assert_eq!(reader.timeline().unwrap(), (21500.0, Some(duration)));
+            } else {
+                result.unwrap();
+                assert_eq!(reader.timeline().unwrap(), (21500.0, None));
+            }
+            // A valid duration can reappear after a song change without reattaching.
+            if preferred.is_some() {
+                short_leaf[0x8c..].copy_from_slice(&211000i32.to_le_bytes());
+                assert_eq!(reader.timeline().unwrap(), (21500.0, Some(211000.0)));
+            }
+        }
+    }
+
+    #[test]
+    fn keeps_reading_position_without_duration_but_rejects_invalid_position() {
+        use super::{Handle, OpenProcess, PROCESS_VM_READ, Reader, V20161_LAYOUTS};
+
+        let mut position = Box::new(123.548812f64);
+        let root = Box::new(0u64);
+        let mut reader = Reader {
+            // SAFETY: position/root allocations remain live for all read-only probes.
+            handle: Handle(unsafe {
+                OpenProcess(PROCESS_VM_READ, false, std::process::id()).unwrap()
+            }),
+            position_base: (&*position as *const f64 as usize) - V20161_LAYOUTS[0].position_offset,
+            duration_base: (&*root as *const u64 as usize) - V20161_LAYOUTS[0].duration_offset,
+            layouts: V20161_LAYOUTS,
+            layout: V20161_LAYOUTS[0],
+        };
+        reader.select_layout().unwrap();
+        assert_eq!(reader.timeline().unwrap(), (123548.812, None));
+        *position = 126.548812;
+        assert_eq!(reader.timeline().unwrap(), (126548.812, None));
+        for invalid in [f64::NAN, f64::INFINITY, -1.0, 86403.0] {
+            *position = invalid;
+            assert!(reader.select_layout().is_err());
+            assert!(reader.timeline().is_err());
         }
     }
 

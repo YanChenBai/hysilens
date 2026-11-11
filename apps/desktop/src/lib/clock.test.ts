@@ -56,4 +56,19 @@ describe('playback clock', () => {
     expect(tokenProgress(1000, 2000, 1500)).toBe(50);
     expect(tokenProgress(1000, 1000, 1000)).toBe(100);
   });
+
+  it('keeps lyric time advancing without total duration and freezes on pause', () => {
+    const state = snapshot();
+    state.session!.sourceId = 'kugou';
+    state.session!.positionMs = 123548.812;
+    state.session!.durationMs = null;
+    expect(playbackPosition(state, 5500)).toBe(124048.812);
+    expect(playbackPosition(state, 20000)).toBe(125548.812);
+
+    state.session!.status = 'paused';
+    expect(playbackPosition(state, 5500)).toBe(123548.812);
+
+    state.session!.positionMs = 90000;
+    expect(playbackPosition(state, 5500)).toBe(90000);
+  });
 });
