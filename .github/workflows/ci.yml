@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: '24'
+          cache: true
+      # Tests and `hysilens dev` need the bundled devtools from this build.
+      - run: vp run @hysilens/plugin#build
+      - run: vp check
+      - run: vp run check:types
+      - run: vp test run
+
+  # Player adapters only compile on Windows.
+  native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: '24'
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      # Bundled plugins build through the SDK's Vite integration.
+      - run: vp run @hysilens/plugin#build
+      - run: vp run check:native
+      - run: vp run test:native

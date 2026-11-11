@@ -1,7 +1,24 @@
 {
   "name": "@hysilens/plugin",
   "version": "0.1.0",
-  "private": true,
+  "description": "Hysilens 歌词插件 SDK、PluginHost、hysilens CLI 与 Vite 集成",
+  "keywords": [
+    "hysilens",
+    "lyrics",
+    "obs",
+    "plugin",
+    "vite"
+  ],
+  "homepage": "https://github.com/YanChenBai/hysilens/blob/main/docs/renderer-plugins.md",
+  "bugs": {
+    "url": "https://github.com/YanChenBai/hysilens/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YanChenBai/hysilens.git",
+    "directory": "packages/plugin"
+  },
   "bin": {
     "hysilens": "./dist/cli.js"
   },
@@ -44,9 +61,12 @@
       "import": "./dist/samples.js"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
-    "build": "vp pack && vp run @hysilens/devtools#build",
-    "prepack": "vp run build"
+    "build": "vp pack && vp run @hysilens/devtools#build"
   },
   "dependencies": {
     "fflate": "catalog:",

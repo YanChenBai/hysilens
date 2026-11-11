@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write # push the version commit, create tags and releases
+  pull-requests: write # open the release PR
+  id-token: write # npm trusted publishing (OIDC)
+
+jobs:
+  # Versions packages through Changesets and publishes @hysilens/plugin to npm.
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      desktop-version: ${{ steps.desktop.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: '24'
+          cache: true
+      # Build here, not in a publish lifecycle script, so failures show their output.
+      - run: vp run @hysilens/plugin#build
+      - run: vp check
+      - run: vp run check:types
+      - run: vp test run
+      - id: changesets
+        # v2 is required for Changesets CLI v3 (new .changeset/pre layout).
+        uses: changesets/action@v2
+        with:
+          version-script: vp run version # format the generated CHANGELOG.md
+          publish-script: vp run release
+          pr-title: 'chore(release): version packages'
+          commit-message: 'chore(release): version packages'
+          create-github-releases: true # tag and release on GitHub after npm publish
+        env:
+          # @changesets/changelog-github reads it in the version script.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # changesets/action only accepts a static title, so add the versions afterwards.
+      - if: steps.changesets.outputs.pr-number
+        run: |
+          git fetch origin changeset-release/main
+          version() { git show "origin/changeset-release/main:$1/package.json" | jq -r .version; }
+          desktop=$(version apps/desktop)
+          plugin=$(version packages/plugin)
+          gh pr edit "$PR" --title "chore(release): hysilens v$desktop, @hysilens/plugin@$plugin"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.changesets.outputs.pr-number }}
+      # Release the desktop app once its version has no `v<version>` tag yet.
+      - id: desktop
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: |
+          version=$(jq -r .version apps/desktop/package.json)
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "v$version already released"
+          else
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
+  desktop:
+    needs: release
+    if: needs.release.outputs.desktop-version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.release.outputs.desktop-version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version: '24'
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: vp run @hysilens/plugin#build
+      # Embeds the control UI and bundled plugins into target/release/hysilens.exe.
+      - run: vp run build
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          exe="dist/hysilens-v$VERSION-windows-x64.exe"
+          cp target/release/hysilens.exe "$exe"
+          (cd dist && sha256sum "$(basename "$exe")" > SHA256SUMS.txt)
+          # Release notes are the version's section of the desktop changelog.
+          awk -v v="## $VERSION" '$0 == v { found = 1; next } found && /^## / { exit } found' \
+            apps/desktop/CHANGELOG.md > dist/notes.md 2>/dev/null || true
+      - name: Create GitHub Release
+        shell: bash
+        run: |
+          gh release create "v$VERSION" dist/*.exe dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "Hysilens v$VERSION" \
+            --notes-file dist/notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

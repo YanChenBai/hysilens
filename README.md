@@ -103,6 +103,13 @@ vp run build              # 构建单文件 target/release/hysilens.exe
 
 检查与测试不会自动启动应用、播放器或 OBS；窗口透明、置顶、拖动、鼠标穿透与真实播放器同步需要手动验证。
 
+### 发布
+
+版本由 [Changesets](https://github.com/changesets/changesets) 管理：改动后运行 `vp run changeset`，选择 `@hysilens/desktop-ui`（桌面端）和／或 `@hysilens/plugin`（npm 包）并说明变更。合入 `main` 后 Release 工作流会打开版本 PR，合并后：
+
+- `@hysilens/plugin` 发布到 npm，并创建 `@hysilens/plugin@<version>` GitHub Release；
+- 桌面端版本若尚无 `v<version>` 标签，在 Windows 上构建 `hysilens.exe`，创建 `v<version>` GitHub Release 并附带 exe 与 `SHA256SUMS.txt`。
+
 ### 项目结构
 
 - [`apps/desktop`](apps/desktop)：React 控制界面与插件宿主；`src-tauri` 管理主窗口、本地悬浮窗与服务生命周期

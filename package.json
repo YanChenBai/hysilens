@@ -2,14 +2,23 @@
   "name": "hysilens",
   "version": "0.1.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YanChenBai/hysilens.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vp run @hysilens/desktop-ui#dev",
     "build": "vp run @hysilens/desktop-ui#build",
     "ready": "vp run @hysilens/plugin#build && vp check && vp run check:types && vp test run && vp run @hysilens/desktop-ui#build:web && vp run check:native && vp run test:native",
+    "changeset": "changeset",
+    "version": "changeset version && vp fmt",
+    "release": "changeset publish",
     "prepare": "vp config"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
     "@hysilens/plugin": "workspace:*",
     "@hysilens/vp-config": "workspace:*",
     "@stylistic/eslint-plugin": "catalog:",
