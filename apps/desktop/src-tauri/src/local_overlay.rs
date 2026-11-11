@@ -521,6 +521,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn control_capability_matches_ipc_origins_without_page_paths() {
+        use tauri::utils::acl::{RemoteUrlPattern, capability::Capability};
+
+        let capability: Capability =
+            serde_json::from_str(include_str!("../capabilities/local-overlay.json")).unwrap();
+        let patterns: Vec<RemoteUrlPattern> = capability
+            .remote
+            .unwrap()
+            .urls
+            .iter()
+            .map(|pattern| pattern.parse().unwrap())
+            .collect();
+
+        // The fetch-based IPC transport sends Origin, which has no page path.
+        for (origin, allowed) in [
+            ("http://127.0.0.1:38473", true),
+            ("http://127.0.0.1:5173", true),
+            ("http://127.0.0.1:40000", true),
+            ("http://localhost:38473", false),
+            ("https://127.0.0.1:38473", false),
+            ("http://127.0.0.1.evil.test:38473", false),
+        ] {
+            let url = origin.parse().unwrap();
+            assert_eq!(
+                patterns.iter().any(|pattern| pattern.test(&url)),
+                allowed,
+                "{origin}"
+            );
+        }
+    }
+
+    #[test]
     fn drag_uses_cursor_delta_without_losing_negative_monitor_positions() {
         let origin = DragOrigin {
             cursor_x: 120.,

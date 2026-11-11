@@ -1,8 +1,8 @@
 {
   "identifier": "local-overlay-control",
-  "description": "Only the main control page can manage the local lyric window; Rust also checks the current port.",
+  "description": "Allow IPC origins in the main window; Rust checks the current port and control/settings page paths.",
   "local": true,
-  "remote": { "urls": ["http://127.0.0.1:*/control", "http://127.0.0.1:*/settings"] },
+  "remote": { "urls": ["http://127.0.0.1:*"] },
   "windows": ["main"],
   "permissions": ["local-overlay"]
 }

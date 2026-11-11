@@ -1,7 +1,15 @@
 import type { LyricDocument, Session } from '@hysilens/protocol';
 import { parseOverlayConfig } from '@hysilens/protocol/config';
-import { Button, FieldError } from '@hysilens/ui';
-import { useEffect, useRef, useState } from 'react';
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+  FieldError,
+} from '@hysilens/ui';
+import { useState } from 'react';
 
 import { lyricLineId, lyricSongId } from '../lib/ignored-lyrics';
 import { readSession, sendOverlay } from '../lib/session';
@@ -16,14 +24,29 @@ export function IgnoredLyricsDialog({
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const songId = lyricSongId(document, session);
 
   return (
-    <>
-      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+    <Dialog
+      open={open}
+      onOpenChange={nextOpen => {
+        if (nextOpen) {
+          setMounted(true);
+        }
+
+        setOpen(nextOpen);
+      }}
+      onOpenChangeComplete={nextOpen => {
+        if (!nextOpen) {
+          setMounted(false);
+        }
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" />} disabled={disabled}>
         设置忽略歌词片段
-      </Button>
-      {open ? (
+      </DialogTrigger>
+      {mounted ? (
         <LyricSelection
           key={`${songId}:${document.id}`}
           document={document}
@@ -31,7 +54,7 @@ export function IgnoredLyricsDialog({
           onClose={() => setOpen(false)}
         />
       ) : null}
-    </>
+    </Dialog>
   );
 }
 
@@ -50,8 +73,6 @@ function LyricSelection({
   songId: string;
   onClose: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-
   const [selected, setSelected] = useState(
     () =>
       new Set(
@@ -61,13 +82,6 @@ function LyricSelection({
 
   const [error, setError] = useState('');
   const lines = document.tracks.find(track => track.kind === 'original')?.lines ?? [];
-
-  useEffect(() => {
-    const element = dialog.current;
-    element?.showModal();
-
-    return () => element?.close();
-  }, []);
 
   function save() {
     try {
@@ -91,81 +105,71 @@ function LyricSelection({
   }
 
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="ignored-lyrics-title"
-      aria-describedby="ignored-lyrics-description"
-      onCancel={onClose}
-      className="bg-background text-foreground fixed inset-0 m-auto max-h-[85dvh] w-[min(36rem,calc(100vw-2rem))] rounded-2xl border p-0 shadow-xl backdrop:bg-black/50"
-    >
-      <div className="flex max-h-[85dvh] flex-col">
-        <header className="shrink-0 space-y-2 border-b p-5">
-          <h2 id="ignored-lyrics-title" className="font-semibold">
-            设置忽略歌词片段
-          </h2>
-          <p className="truncate text-sm">{document.metadata.title || document.filename}</p>
-          <p id="ignored-lyrics-description" className="text-muted-foreground text-xs">
-            勾选的歌词行会从画面移除，其他歌词继续正常显示；配置仅用于这首歌。
-          </p>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {lines.length ? (
-            lines.map((line, index) => {
-              const id = lyricLineId(line);
+    <DialogContent className="flex max-h-[min(85dvh,calc(100dvh-2rem))] max-w-xl flex-col overflow-hidden p-0">
+      <header className="min-w-0 shrink-0 space-y-2 border-b p-5 pr-12">
+        <DialogTitle>设置忽略歌词片段</DialogTitle>
+        <p className="truncate text-sm">{document.metadata.title || document.filename}</p>
+        <DialogDescription className="text-xs">
+          勾选的歌词行会从画面移除，其他歌词继续正常显示；配置仅用于这首歌。
+        </DialogDescription>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+        {lines.length ? (
+          lines.map((line, index) => {
+            const id = lyricLineId(line);
 
-              return (
-                <label
-                  key={index}
-                  className="hover:bg-muted flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-primary mt-1 size-4 shrink-0"
-                    checked={selected.has(id)}
-                    onChange={event => {
-                      const checked = event.target.checked;
-                      setSelected(previous => {
-                        const next = new Set(previous);
+            return (
+              <label
+                key={index}
+                className="hover:bg-muted flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-primary mt-1 size-4 shrink-0"
+                  checked={selected.has(id)}
+                  onChange={event => {
+                    const checked = event.target.checked;
+                    setSelected(previous => {
+                      const next = new Set(previous);
 
-                        if (checked) {
-                          next.add(id);
-                        } else {
-                          next.delete(id);
-                        }
+                      if (checked) {
+                        next.add(id);
+                      } else {
+                        next.delete(id);
+                      }
 
-                        return next;
-                      });
-                    }}
-                  />
-                  <span className="text-muted-foreground mt-0.5 shrink-0 font-mono text-xs">
-                    {timestamp(line.startMs)}
-                  </span>
-                  <span className="min-w-0 break-words">{line.text || '（空行）'}</span>
-                </label>
-              );
-            })
-          ) : (
-            <p className="text-muted-foreground p-3 text-sm">当前没有可配置的歌词。</p>
-          )}
-        </div>
-        <footer className="shrink-0 space-y-3 border-t p-4">
-          <FieldError show={Boolean(error)}>{error}</FieldError>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-              清空选择
-            </Button>
-            <span className="text-muted-foreground text-xs" role="status">
-              已选 {lines.filter(line => selected.has(lyricLineId(line))).length} 行
-            </span>
-            <Button size="sm" variant="outline" className="ml-auto" onClick={onClose}>
-              取消
-            </Button>
-            <Button size="sm" onClick={save}>
-              保存
-            </Button>
-          </div>
-        </footer>
+                      return next;
+                    });
+                  }}
+                />
+                <span className="text-muted-foreground mt-0.5 shrink-0 font-mono text-xs">
+                  {timestamp(line.startMs)}
+                </span>
+                <span className="min-w-0 break-words">{line.text || '（空行）'}</span>
+              </label>
+            );
+          })
+        ) : (
+          <p className="text-muted-foreground p-3 text-sm">当前没有可配置的歌词。</p>
+        )}
       </div>
-    </dialog>
+      <footer className="shrink-0 space-y-3 border-t p-4">
+        <FieldError show={Boolean(error)}>{error}</FieldError>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            清空选择
+          </Button>
+          <span className="text-muted-foreground text-xs" role="status">
+            已选 {lines.filter(line => selected.has(lyricLineId(line))).length} 行
+          </span>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={onClose}>
+            取消
+          </Button>
+          <Button size="sm" onClick={save}>
+            保存
+          </Button>
+        </div>
+      </footer>
+    </DialogContent>
   );
 }

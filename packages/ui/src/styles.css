@@ -85,3 +85,27 @@
     @apply bg-primary/15;
   }
 }
+
+.ui-dialog {
+  transition:
+    opacity 220ms ease,
+    transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ui-dialog[data-starting-style],
+.ui-dialog[data-ending-style] {
+  opacity: 0;
+  transform: translate(var(--dialog-x, 0px), var(--dialog-y, 0px)) scale(0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-dialog,
+  [data-slot='dialog-backdrop'] {
+    transition-duration: 0.01ms;
+  }
+
+  .ui-dialog[data-starting-style],
+  .ui-dialog[data-ending-style] {
+    transform: none;
+  }
+}
