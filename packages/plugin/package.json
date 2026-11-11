@@ -1,0 +1,56 @@
+{
+  "name": "@hysilens/plugin",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "hysilens": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./runtime": {
+      "types": "./dist/bootstrap.d.ts",
+      "import": "./dist/bootstrap.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js"
+    },
+    "./demo": {
+      "types": "./dist/demo.d.ts",
+      "import": "./dist/demo.js"
+    },
+    "./samples": {
+      "types": "./dist/samples.d.ts",
+      "import": "./dist/samples.js"
+    }
+  },
+  "scripts": {
+    "build": "vp pack && vp run @hysilens/devtools#build",
+    "prepack": "vp run build"
+  },
+  "dependencies": {
+    "fflate": "catalog:",
+    "vite-plus": "catalog:",
+    "zod": "catalog:"
+  }
+}

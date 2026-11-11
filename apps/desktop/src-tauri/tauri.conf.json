@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Hysilens",
+  "version": "0.1.0",
+  "identifier": "app.hysilens.desktop",
+  "build": {
+    "beforeDevCommand": "vp run build:web && vp run dev:web",
+    "beforeBuildCommand": "vp run build:web",
+    "frontendDist": "../host",
+    "devUrl": "http://127.0.0.1:5173"
+  },
+  "app": { "windows": [], "security": { "csp": null } },
+  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+}

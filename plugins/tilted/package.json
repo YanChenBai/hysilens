@@ -1,0 +1,15 @@
+{
+  "name": "@hysilens/renderer-tilted",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "hysilens dev",
+    "build": "vp exec tsc --noEmit && hysilens build"
+  },
+  "devDependencies": {
+    "@hysilens/plugin": "workspace:*",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

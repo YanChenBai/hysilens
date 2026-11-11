@@ -1,0 +1,8 @@
+{
+  "identifier": "local-lyrics-interaction",
+  "description": "Only the lyric window can drag itself and follow plugin dimensions.",
+  "local": false,
+  "remote": { "urls": ["http://127.0.0.1:*/"] },
+  "windows": ["local-lyrics"],
+  "permissions": ["local-lyrics-interaction"]
+}

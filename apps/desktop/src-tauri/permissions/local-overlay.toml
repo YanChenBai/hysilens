@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "local-overlay"
+description = "Read and update only the desktop lyric window."
+commands.allow = ["local_overlay_get", "local_overlay_set"]
+
+[[permission]]
+identifier = "local-lyrics-interaction"
+description = "Move and resize only the native lyric window."
+commands.allow = ["local_overlay_drag", "local_overlay_size"]

@@ -1,0 +1,30 @@
+{
+  "name": "@hysilens/devtools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser UI served by `hysilens dev`: stage, transport, sample lyrics and config editor.",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp exec tsc --noEmit && vp build"
+  },
+  "dependencies": {
+    "@hysilens/plugin": "workspace:*",
+    "@hysilens/ui": "workspace:*",
+    "cn": "^0.5.2",
+    "kubai-icons-react": "^0.3.0",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "oxc-transform-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

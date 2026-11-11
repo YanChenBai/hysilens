@@ -1,0 +1,13 @@
+{
+  "color": "#edf3ff",
+  "activeColor": "#bcb8ff",
+  "background": "transparent",
+  "fontFamily": "Segoe UI",
+  "fontSize": 42,
+  "lineGap": 8,
+  "visibleLines": 3,
+  "offset": 0,
+  "romanization": true,
+  "translation": true,
+  "renderer": "builtin:scroll"
+}

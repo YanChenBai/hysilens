@@ -1,0 +1,8 @@
+{
+  "identifier": "local-overlay-control",
+  "description": "Only the main control page can manage the local lyric window; Rust also checks the current port.",
+  "local": true,
+  "remote": { "urls": ["http://127.0.0.1:*/control", "http://127.0.0.1:*/settings"] },
+  "windows": ["main"],
+  "permissions": ["local-overlay"]
+}

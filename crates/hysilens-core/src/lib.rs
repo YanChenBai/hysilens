@@ -1,0 +1,11 @@
+mod capture;
+pub mod config;
+mod coordinator;
+mod fonts;
+pub mod model;
+pub mod platforms;
+pub mod plugin_registry;
+pub mod plugins;
+pub mod protocol;
+pub mod server;
+pub mod settings;

@@ -1,0 +1,45 @@
+[package]
+name = "hysilens-core"
+autobins = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4", features = ["derive"] }
+lyrics-core = "0.5"
+lyrics-crypto = "0.5"
+lyrics-parsers = "0.5"
+memchr = "2"
+mime_guess = "2"
+notify = "8.2"
+rust-embed = { version = "8", features = ["debug-embed"] }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+jsonschema = { version = "0.61", default-features = false }
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "net"] }
+tower-http = { version = "0.6", features = ["fs"] }
+fontdb = "0.24.0"
+zip = { version = "9.5.1", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+rfd = { version = "0.18.0", default-features = false }
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Media_Control",
+  "Win32_System_Com",
+  "Win32_System_Diagnostics_Debug",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Memory",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[lib]
+name = "hysilens_core"

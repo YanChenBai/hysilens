@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Paint the preview canvas before loading styles or the application bundle.
+      (() => {
+        const preview = new URLSearchParams(location.search).get('preview');
+        const palettes = {
+          dark: ['dark', '#000'],
+          light: ['light', '#fafafa'],
+          system: ['light dark', 'light-dark(#fafafa, #000)'],
+          1: ['dark', '#000'],
+        };
+        const palette = palettes[preview];
+        if (palette) {
+          document.documentElement.style.colorScheme = palette[0];
+          document.documentElement.style.background = palette[1];
+        }
+      })();
+    </script>
+    <title>Hysilens</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

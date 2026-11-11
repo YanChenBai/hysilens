@@ -1,0 +1,70 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+.tilted {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
+.tilted[hidden] {
+  display: none;
+}
+.plane {
+  width: calc(100% - 72px);
+  min-width: 0;
+  transform: perspective(var(--perspective)) rotateX(var(--rotate-x)) rotateY(var(--rotate-y))
+    rotateZ(var(--tilt)) skewX(var(--skew));
+  transform-origin: center;
+}
+.viewport {
+  width: 100%;
+  overflow: hidden;
+  mask-image: linear-gradient(transparent, black 5%, black 95%, transparent);
+  transition: height 380ms ease;
+}
+.track {
+  position: relative;
+  transition: transform 420ms cubic-bezier(0.22, 0.75, 0.25, 1);
+}
+.line {
+  padding: calc(var(--line-gap) / 2) 8px;
+  text-align: center;
+  opacity: var(--inactive-opacity);
+  transform: scale(0.96);
+  transition:
+    color 300ms,
+    opacity 300ms,
+    transform 300ms;
+}
+.line.current {
+  color: var(--active-color);
+  opacity: 1;
+  transform: scale(1);
+}
+.original {
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-text-stroke: var(--stroke-width) var(--stroke-color);
+  paint-order: stroke fill;
+  text-shadow: var(--text-shadow);
+}
+.secondary {
+  margin-top: 4px;
+  font-size: 0.42em;
+  line-height: 1.4;
+  opacity: 0.8;
+  text-shadow: var(--text-shadow);
+}
+@media (prefers-reduced-motion: reduce) {
+  .viewport,
+  .track,
+  .line {
+    transition: none;
+  }
+}

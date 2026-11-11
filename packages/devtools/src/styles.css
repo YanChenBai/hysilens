@@ -1,0 +1,31 @@
+@import '@hysilens/ui/styles.css';
+@source './**/*.{ts,tsx}';
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* Transparent-canvas preview, matching how OBS composites a browser source. */
+.stage-checker {
+  background-color: oklch(0.3 0 0);
+  background-image: repeating-conic-gradient(oklch(0.34 0 0) 0 25%, oklch(0.27 0 0) 0 50%);
+  background-size: 24px 24px;
+}
+
+.stage-dark {
+  background: #000;
+}
+
+.stage-light {
+  background: #fafafa;
+}
+
+input[type='range'].seek {
+  accent-color: var(--color-primary);
+}

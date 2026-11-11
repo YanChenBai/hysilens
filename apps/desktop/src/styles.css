@@ -1,0 +1,61 @@
+@import '@hysilens/ui/styles.css';
+@source './**/*.{ts,tsx}';
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+html.overlay,
+html.overlay body {
+  background: transparent;
+}
+
+html.overlay,
+html.overlay body,
+html.overlay #root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.overlay #root {
+  position: relative;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html.overlay.preview {
+  color-scheme: dark;
+  background: #000;
+}
+
+html.overlay.preview[data-preview-theme='light'] {
+  color-scheme: light;
+  background: #fafafa;
+}
+
+html.overlay.preview[data-preview-theme='system'] {
+  color-scheme: light dark;
+  background: light-dark(#fafafa, #000);
+}
+
+html.overlay.preview body {
+  background: inherit;
+}
+
+.control-workspace {
+  height: auto;
+  min-height: 100%;
+  grid-template-rows: minmax(320px, 55dvh) minmax(540px, auto);
+}
+
+@media (min-width: 768px) {
+  .control-workspace {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns:
+      minmax(280px, min(var(--preview-width), calc(100% - 340px)))
+      0px minmax(340px, 1fr);
+  }
+}

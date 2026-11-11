@@ -1,0 +1,33 @@
+{
+  "name": "hysilens",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp run @hysilens/desktop-ui#dev",
+    "build": "vp run @hysilens/desktop-ui#build",
+    "ready": "vp run @hysilens/plugin#build && vp check && vp run check:types && vp test run && vp run @hysilens/desktop-ui#build:web && vp run check:native && vp run test:native",
+    "prepare": "vp config"
+  },
+  "devDependencies": {
+    "@hysilens/plugin": "workspace:*",
+    "@hysilens/vp-config": "workspace:*",
+    "@stylistic/eslint-plugin": "catalog:",
+    "@tauri-apps/cli": "^2.12.4",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "zod": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.10.1",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}

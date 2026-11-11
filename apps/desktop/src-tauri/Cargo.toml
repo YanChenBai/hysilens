@@ -1,0 +1,26 @@
+[package]
+name = "hysilens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+hysilens-core = { path = "../../../crates/hysilens-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.12", features = [] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "signal"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
