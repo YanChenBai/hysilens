@@ -28,7 +28,7 @@ export default defineConfig({
         cache: false,
       },
       'dev:web': { dependsOn: ['plugins'], command: 'vp dev', cache: false },
-      dev: { command: 'vp exec tauri dev -- --dev', cache: false },
+      dev: { command: 'vp exec tauri dev -- -- --dev', cache: false },
       build: { command: 'vp exec tauri build --no-bundle', cache: false },
     },
   },
