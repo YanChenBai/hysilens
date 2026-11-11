@@ -33,7 +33,7 @@ jobs:
         uses: changesets/action@v2
         with:
           version-script: vp run version # format the generated CHANGELOG.md
-          publish-script: vp run release
+          # No publish-script: vp run drops CHANGESETS_OUTPUT, which the action needs to tag and release.
           pr-title: 'chore(release): version packages'
           commit-message: 'chore(release): version packages'
           create-github-releases: true # tag and release on GitHub after npm publish
@@ -53,7 +53,7 @@ jobs:
           PR: ${{ steps.changesets.outputs.pr-number }}
       # Release the desktop app once its version has no `v<version>` tag yet.
       - id: desktop
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.has-changesets == 'false'
         run: |
           version=$(jq -r .version apps/desktop/package.json)
           if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
