@@ -13,6 +13,7 @@ pub struct OverlaySettings {
     pub offset: f64,
     pub romanization: bool,
     pub translation: bool,
+    pub ignored_lyric_lines: std::collections::BTreeMap<String, Vec<String>>,
     pub renderer: String,
 }
 
@@ -33,6 +34,7 @@ impl Default for OverlaySettings {
             offset: value["offset"].as_f64().unwrap(),
             romanization: value["romanization"].as_bool().unwrap(),
             translation: value["translation"].as_bool().unwrap(),
+            ignored_lyric_lines: Default::default(),
             renderer: value["renderer"].as_str().unwrap().into(),
         }
     }
@@ -87,6 +89,20 @@ fn is_color(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn persists_ignored_lyrics_and_defaults_older_settings() {
+        let mut settings = OverlaySettings::default();
+        settings.ignored_lyric_lines.insert(
+            r#"song:v1:["歌名","歌手","专辑"]"#.into(),
+            vec![r#"[1000,"吉他：某某"]"#.into()],
+        );
+        let encoded = serde_json::to_string(&settings).unwrap();
+        let decoded: OverlaySettings = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, settings);
+        let legacy: OverlaySettings = serde_json::from_str("{}").unwrap();
+        assert!(legacy.ignored_lyric_lines.is_empty());
+    }
+
     #[test]
     fn validates_shared_defaults_and_rejects_invalid_styles() {
         let mut settings = OverlaySettings::default();

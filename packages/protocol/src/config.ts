@@ -27,6 +27,8 @@ const boolean = (fallback: boolean) =>
     return value;
   }, z.boolean().default(fallback));
 
+const ignoredLyricLines = z.record(z.string(), z.array(z.string()));
+
 export const overlaySchema = z.object({
   color: color.default(defaults.color),
   activeColor: color.default(defaults.activeColor),
@@ -43,6 +45,7 @@ export const overlaySchema = z.object({
   offset: number(-10000, 10000, defaults.offset),
   romanization: boolean(defaults.romanization),
   translation: boolean(defaults.translation),
+  ignoredLyricLines: ignoredLyricLines.default({}),
   renderer: z
     .string()
     .regex(PLUGIN_ID_PATTERN)

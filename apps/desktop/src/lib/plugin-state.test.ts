@@ -2,6 +2,7 @@ import { demo } from '@hysilens/plugin/demo';
 import type { Snapshot } from '@hysilens/protocol';
 import { describe, expect, it } from 'vite-plus/test';
 
+import { lyricLineId, lyricSongId } from './ignored-lyrics';
 import { pluginFrameState } from './plugin-state';
 import type { SessionState } from './session';
 
@@ -48,6 +49,33 @@ function session(overrides: Partial<Snapshot['session'] & object> = {}, offset =
 }
 
 describe('pluginFrameState', () => {
+  it('keeps the plugin visible during ignored rows and only removes selected content', () => {
+    const current = session({ positionMs: 5500 }, 500);
+    const snapshot = current.snapshot!;
+    snapshot.overlay = {
+      ...snapshot.overlay!,
+      ignoredLyricLines: {
+        [lyricSongId(demo, snapshot.session)]: [lyricLineId(demo.tracks[0]!.lines[1]!)],
+      },
+    };
+    const options = { playground: false, startedAt: 0, now: 1000 };
+    const filtered = pluginFrameState(current, options);
+    expect(filtered.playback.visible).toBe(true);
+    expect(filtered.lyrics!.tracks[0]!.lines).toHaveLength(demo.tracks[0]!.lines.length - 1);
+    expect(
+      filtered.lyrics!.tracks[0]!.lines.some(
+        line => line.startMs === demo.tracks[0]!.lines[1]!.startMs,
+      ),
+    ).toBe(false);
+    snapshot.session!.positionMs = 11499;
+    expect(pluginFrameState(current, options).playback.visible).toBe(true);
+    snapshot.session!.positionMs = 11500;
+    expect(pluginFrameState(current, options).playback.visible).toBe(true);
+    snapshot.session!.positionMs = 5499;
+    expect(pluginFrameState(current, options).playback.visible).toBe(true);
+    snapshot.overlay.ignoredLyricLines = {};
+    expect(pluginFrameState(current, options).lyrics).toBe(demo);
+  });
   it('applies the overlay offset once and keeps the playback rate', () => {
     const state = pluginFrameState(session({}, 250), {
       playground: false,

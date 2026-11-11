@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { send, sendOverlay, useSession } from '../lib/session';
 import { Choice } from './Choice';
+import { IgnoredLyricsDialog } from './IgnoredLyricsDialog';
 
 const sources = [
   { value: 'auto', label: '自动选择' },
@@ -14,7 +15,7 @@ const sources = [
 ];
 
 export function PlaybackPanel() {
-  const { snapshot } = useSession();
+  const { snapshot, connection } = useSession();
   const overlay = parseOverlayConfig(snapshot?.overlay).options;
   const [error, setError] = useState('');
 
@@ -80,6 +81,14 @@ export function PlaybackPanel() {
               }
             />
           </Field>
+        ) : null}
+        {snapshot?.document ? (
+          <IgnoredLyricsDialog
+            key={snapshot.document.id}
+            document={snapshot.document}
+            session={snapshot.session}
+            disabled={connection !== 'connected'}
+          />
         ) : null}
         {snapshot?.cacheIssues.map(issue => (
           <p key={issue} className="text-muted-foreground text-xs">

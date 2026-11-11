@@ -3,6 +3,7 @@ import { DEMO_DURATION_MS, demo } from '@hysilens/plugin/demo';
 import { parseOverlayConfig } from '@hysilens/protocol/config';
 
 import { playbackPosition } from './clock';
+import { ignoredLyricState } from './ignored-lyrics';
 import type { SessionState } from './session';
 
 export interface PluginFrameState {
@@ -40,16 +41,19 @@ export function pluginFrameState(
 
   const snapshot = session.snapshot;
   const current = snapshot?.session;
-  const offset = parseOverlayConfig(snapshot?.overlay).options.offset;
+  const overlay = parseOverlayConfig(snapshot?.overlay).options;
+  const offset = overlay.offset;
   const serverNow = session.clockOffset === null ? null : options.now + session.clockOffset;
   const position = playbackPosition(snapshot, serverNow);
   const playing = current?.status === 'playing';
+  const lyricTime = position === null ? null : position + offset;
+  const filtered = ignoredLyricState(snapshot, overlay);
 
   return {
-    lyrics: snapshot?.document ?? null,
+    lyrics: filtered.document,
     playback: { playing, visible: visible(session, options.now) },
     clock: {
-      position: position === null ? null : position + offset,
+      position: lyricTime,
       // Without a rate the host does not extrapolate either, so neither may the plugin.
       rate: playing && current?.rate != null ? current.rate : 0,
     },
