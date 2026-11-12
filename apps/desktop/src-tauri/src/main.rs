@@ -12,13 +12,14 @@
 //!   [`local_overlay::CONTROL_BRIDGE`] 的 frame
 //! - `local-lyrics` 是无边框歌词 overlay，按需创建，完全由 [`local_overlay`] 管理
 //!
-//! 关闭 `main` 窗口即关闭应用：overlay 被销毁，server task 被 abort，runtime
-//! 获得一小段宽限期
+//! 关闭 `main` 窗口时隐藏到托盘，overlay 与 server 继续运行；从托盘退出应用时
+//! 销毁 overlay、abort server task，并给 runtime 一小段宽限期
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod local_overlay;
 mod runtime;
+mod tray;
 
 use clap::Parser;
 use hysilens_core::config::{Settings, data_root};
@@ -112,6 +113,8 @@ fn main() -> anyhow::Result<()> {
                 .min_inner_size(900., 640.)
                 .build()?;
 
+            tray::setup(app.handle())?;
+
             // 跟随 server 重启：supervisor 每次发布新 URL 时重新指向两个窗口
             let app_handle = app.handle().clone();
             handle.spawn(async move {
@@ -133,15 +136,21 @@ fn main() -> anyhow::Result<()> {
         })
         .on_window_event(|window, event| {
             if window.label() == "main"
-                && matches!(
-                    event,
-                    tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
-                )
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
             {
-                local_overlay::close(window.app_handle());
+                api.prevent_close();
+
+                if let Err(error) = window.hide() {
+                    eprintln!("隐藏主界面失败: {error}");
+                }
             }
         })
-        .run(tauri::generate_context!())?;
+        .build(tauri::generate_context!())?
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                local_overlay::close(app);
+            }
+        });
 
     worker.abort();
     runtime.shutdown_timeout(std::time::Duration::from_secs(2));
