@@ -1,6 +1,6 @@
 {
   "name": "@hysilens/plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hysilens 歌词插件 SDK、PluginHost、hysilens CLI 与 Vite 集成",
   "keywords": [
     "hysilens",
