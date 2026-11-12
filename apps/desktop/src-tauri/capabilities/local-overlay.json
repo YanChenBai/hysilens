@@ -4,5 +4,5 @@
   "local": true,
   "remote": { "urls": ["http://127.0.0.1:*"] },
   "windows": ["main"],
-  "permissions": ["local-overlay"]
+  "permissions": ["local-overlay", "desktop-control"]
 }

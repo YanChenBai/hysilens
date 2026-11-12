@@ -1,4 +1,3 @@
-import type { PlaybackSource } from '@hysilens/protocol';
 import {
   Button,
   Dialog,
@@ -17,16 +16,9 @@ import { Activity } from 'kubai-icons-react';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 
-import { getJson } from '../lib/api';
+import { control } from '../lib/control';
+import type { DiagnosticInfo } from '../lib/control';
 import { SettingsRow, SettingsSection } from './SettingsSection';
-
-interface DiagnosticInfo {
-  source: PlaybackSource | null;
-
-  name: string;
-
-  description: string;
-}
 
 /**
  * 先展示适配器提供的采集说明，再按确认的平台导出报告
@@ -35,23 +27,11 @@ export function PlaybackDiagnostics() {
   const [open, setOpen] = useState(false);
 
   const target = useMutation({
-    mutationFn: () => getJson<DiagnosticInfo>('/api/diagnostics'),
+    mutationFn: control.getDiagnostics,
   });
 
   const report = useMutation({
-    mutationFn: async (info: DiagnosticInfo) => {
-      const response = await fetch('/api/diagnostics/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: info.source }),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      return response.json() as Promise<{ path: string | null }>;
-    },
+    mutationFn: (info: DiagnosticInfo) => control.exportDiagnostics(info.source),
   });
 
   let message = '';

@@ -8,6 +8,7 @@
     "@hysilens/protocol": "workspace:*",
     "@hysilens/ui": "workspace:*",
     "@tanstack/react-query": "^5.107.1",
+    "@tauri-apps/api": "catalog:",
     "ajv": "^8.17.1",
     "kubai-icons-react": "^0.3.0",
     "lucide-react": "^1.70.0",

@@ -15,7 +15,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash } from 'kubai-icons-react';
 import { useState } from 'react';
 
-import { removePlugin } from '../lib/api';
+import { control } from '../lib/control';
 
 /**
  * 确认后删除所选外部 plugin，内置 plugin 不提供此入口
@@ -25,7 +25,7 @@ export function RemovePluginButton({ plugin }: { plugin: PluginManifest }) {
   const queries = useQueryClient();
 
   const remove = useMutation({
-    mutationFn: () => removePlugin(plugin.id),
+    mutationFn: () => control.removePlugin(plugin.id),
     onSuccess: catalog => {
       setOpen(false);
       queries.removeQueries({ queryKey: ['plugin-config', plugin.id] });

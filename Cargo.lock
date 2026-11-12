@@ -1794,6 +1794,7 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "tower",
  "tower-http",
  "tungstenite",
  "windows",

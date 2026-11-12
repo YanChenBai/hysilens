@@ -48,6 +48,11 @@ export interface LocalOverlaySettings {
 
 interface DesktopBridge {
   /**
+   * 当前 host 支持主窗口核心控制 IPC
+   */
+  controlIpc?: boolean;
+
+  /**
    * 从原生 host 读取持久化的 overlay 偏好
    */
   getOverlay(): Promise<LocalOverlaySettings>;

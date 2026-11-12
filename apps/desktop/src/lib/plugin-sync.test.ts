@@ -28,6 +28,25 @@ function seeded() {
 }
 
 describe('invalidatePluginQueries', () => {
+  it('updates Kugou status directly from channel events', () => {
+    const { queries, stale } = seeded();
+
+    const status = {
+      enabled: true,
+      port: 9225,
+      portOpen: true,
+      endpointAvailable: true,
+      kugouRunning: true,
+      connected: true,
+      error: null,
+    };
+
+    invalidatePluginQueries(queries, { kind: 'kugou', status });
+
+    expect(queries.getQueryData(['kugou-enhanced'])).toEqual(status);
+    expect(stale()).toEqual([]);
+  });
+
   it('refreshes only the catalog when plugins change', () => {
     const { queries, stale } = seeded();
 

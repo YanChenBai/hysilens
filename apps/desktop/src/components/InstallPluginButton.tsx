@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PackagePlus } from 'kubai-icons-react';
 import { useRef } from 'react';
 
-import { installPlugin } from '../lib/api';
+import { installPlugin } from '../lib/control';
 
 /**
  * 选择一个 `hysilens pack` zip 并安装到用户 plugin 目录

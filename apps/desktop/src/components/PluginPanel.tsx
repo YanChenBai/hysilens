@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Package, RotateCw } from 'kubai-icons-react';
 import { useState } from 'react';
 
-import { getJson, loadConfig, rescanPlugins } from '../lib/api';
-import type { PluginCatalog, PluginConfig } from '../lib/api';
+import { loadConfig } from '../lib/api';
+import type { PluginConfig } from '../lib/api';
+import { control } from '../lib/control';
 import { sendOverlay } from '../lib/session';
 import { Choice } from './Choice';
 import { InstallPluginButton } from './InstallPluginButton';
@@ -25,11 +26,11 @@ export function PluginPanel({ active }: { active: string }) {
 
   const catalog = useQuery({
     queryKey: ['plugins'],
-    queryFn: () => getJson<PluginCatalog>('/api/plugins'),
+    queryFn: control.listPlugins,
   });
 
   const rescan = useMutation({
-    mutationFn: rescanPlugins,
+    mutationFn: control.rescanPlugins,
     onSuccess: next => queries.setQueryData(['plugins'], next),
   });
 
@@ -44,7 +45,7 @@ export function PluginPanel({ active }: { active: string }) {
         throw new Error('未找到插件');
       }
 
-      const value = await getJson<PluginConfig>(`/api/plugins/${plugin.id}/config`);
+      const value = await control.getPluginConfig(plugin.id);
 
       return { ...value, config: loadConfig(plugin, value.config) };
     },

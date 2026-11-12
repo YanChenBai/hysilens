@@ -13,6 +13,11 @@ import type { PluginEvent } from './session';
  */
 export function invalidatePluginQueries(queries: QueryClient, event: PluginEvent): void {
   switch (event.kind) {
+    case 'kugou': {
+      queries.setQueryData(['kugou-enhanced'], event.status);
+      break;
+    }
+
     case 'plugins': {
       void queries.invalidateQueries({ queryKey: ['plugins'] });
       break;
@@ -25,6 +30,7 @@ export function invalidatePluginQueries(queries: QueryClient, event: PluginEvent
     }
 
     case 'resync': {
+      void queries.invalidateQueries({ queryKey: ['kugou-enhanced'] });
       void queries.invalidateQueries({ queryKey: ['plugins'] });
       void queries.invalidateQueries({ queryKey: ['plugin-config'] });
       void queries.invalidateQueries({ queryKey: ['config-editor'] });

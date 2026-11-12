@@ -2,6 +2,8 @@ import { Button, FieldError, Input } from '@hysilens/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Folder } from 'kubai-icons-react';
 
+import { control } from '../lib/control';
+
 interface Props {
   id: string;
 
@@ -20,19 +22,7 @@ interface Props {
  */
 export function DirectoryInput({ id, label, value, onChange }: Props) {
   const choose = useMutation({
-    mutationFn: async () => {
-      const response = await fetch('/api/dialog/directory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directory: value }),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      return response.json() as Promise<{ path: string | null }>;
-    },
+    mutationFn: () => control.pickDirectory(value),
     onSuccess: result => {
       if (result.path !== null) {
         onChange(result.path);

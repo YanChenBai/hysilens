@@ -2,7 +2,7 @@
 //!
 //! 该二进制掌管整个进程：应用命令行覆盖项、加载
 //! [`hysilens_core::config::Settings`]、绑定 loopback listener，并在多线程 Tokio
-//! runtime 上运行 HTTP server 供 UI 通信
+//! runtime 上运行核心服务；主窗口通过 IPC 控制，HTTP/WebSocket 只服务歌词渲染
 //! [`runtime::supervise`] 让这个 server 在设置变更期间保持存活，本模块则持有它
 //! 外面的 Tauri application
 //!
@@ -17,6 +17,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ipc;
 mod local_overlay;
 mod runtime;
 mod tray;
@@ -68,8 +69,9 @@ fn main() -> anyhow::Result<()> {
     // control URL，供窗口跟随
     let (restart, requests) = mpsc::channel(4);
     let (urls, mut navigation) = watch::channel(url.clone());
+    let (control, services) = watch::channel(None);
     let worker = runtime.spawn(runtime::supervise(
-        listener, settings, restart, requests, urls,
+        listener, settings, restart, requests, urls, control,
     ));
 
     println!(
@@ -89,11 +91,24 @@ fn main() -> anyhow::Result<()> {
     let handle = runtime.handle().clone();
 
     tauri::Builder::default()
+        .manage(ipc::ControlIpc::new(services))
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(event, tauri::WindowEvent::Destroyed)
+                && let Err(error) = window.state::<ipc::ControlIpc>().cancel(None)
+            {
+                eprintln!("释放主窗口 IPC 订阅失败: {error}");
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             local_overlay::local_overlay_get,
             local_overlay::local_overlay_set,
             local_overlay::local_overlay_drag,
             local_overlay::local_overlay_size,
+            ipc::control_request,
+            ipc::control_install_plugin,
+            ipc::control_subscribe,
+            ipc::control_unsubscribe,
         ])
         .setup(move |app| {
             let initial = local_overlay::control_url(&url, cli.dev)?;

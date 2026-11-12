@@ -3,54 +3,7 @@ import type { AnySchemaObject, ValidateFunction } from 'ajv';
 import Ajv2020 from 'ajv/dist/2020';
 
 /**
- * 从 host API 获取并解析 JSON
- *
- * @throws 响应不是 OK 时抛出，消息为响应体内容
- */
-export async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { cache: 'no-store' });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  return response.json() as Promise<T>;
-}
-
-/**
- * 向 host API 发送 JSON 请求体
- *
- * @throws 响应不是 OK 时抛出，消息为响应体内容
- */
-export async function putJson(path: string, value: unknown): Promise<void> {
-  const response = await fetch(path, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(value),
-  });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-}
-
-/**
- * 无请求体的 POST，返回 JSON 响应
- *
- * @throws 响应不是 OK 时抛出，消息为响应体内容
- */
-export async function postJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { method: 'POST' });
-
-  if (!response.ok) {
-    throw new Error((await response.text()) || `请求失败（${response.status}）`);
-  }
-
-  return response.json() as Promise<T>;
-}
-
-/**
- * 由 `/api/plugins` 提供的 plugin 目录扫描结果
+ * plugin registry 提供的目录扫描结果
  */
 export interface PluginCatalog {
   /**
@@ -67,49 +20,6 @@ export interface PluginCatalog {
    * 服务端上报的 catalog 版本号，存在时才有
    */
   revision?: number;
-}
-
-/**
- * 上传 `hysilens pack` 归档；由服务端校验、安装并广播
- */
-export async function installPlugin(file: Blob): Promise<PluginManifest> {
-  const response = await fetch('/api/plugins/install', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/zip' },
-    body: file,
-  });
-
-  if (!response.ok) {
-    throw new Error((await response.text()) || `安装失败（${response.status}）`);
-  }
-
-  return response.json() as Promise<PluginManifest>;
-}
-
-/**
- * 强制服务端重新读取 plugin 目录，文件事件丢失时的兜底
- */
-export async function rescanPlugins(): Promise<PluginCatalog> {
-  const response = await fetch('/api/plugins/rescan', { method: 'POST' });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  return response.json() as Promise<PluginCatalog>;
-}
-
-/**
- * 删除外部 plugin；保留已保存的配置
- */
-export async function removePlugin(id: string): Promise<PluginCatalog> {
-  const response = await fetch(`/api/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' });
-
-  if (!response.ok) {
-    throw new Error((await response.text()) || `删除失败（${response.status}）`);
-  }
-
-  return response.json() as Promise<PluginCatalog>;
 }
 
 /**
