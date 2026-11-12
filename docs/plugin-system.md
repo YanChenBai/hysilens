@@ -211,7 +211,7 @@ dist/
 ```
 
 - 内置插件：`apps/desktop/public/plugins/<id>/`，只包含 `scripts/build-plugins.ts` 中 `BUNDLED` 名单里的插件（`builtin` 与 `tilted`）。外部插件：`<data>/plugins/<id>/`，同名时外部优先。
-- `hysilens pack` 先构建，再输出 `<id>-<version>.zip`，压缩包根目录就是 `dist/` 的内容；应用通过 `POST /api/plugins/install` 安装它。
+- `hysilens pack` 先构建，再输出 `<id>-<version>.zip`，压缩包根目录就是 `dist/` 的内容；桌面主窗口通过二进制 IPC 安装它。
 - Rust 只读取 `hysilens.json`，校验 `apiVersion`、`id` 与目录名一致（内置目录为 `builtin:<目录名>`）、`entry` 和 `styles` 路径不越界，以及 `configSchema` 是合法的 JSON Schema。
 
 ## 宿主

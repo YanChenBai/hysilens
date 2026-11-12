@@ -5,8 +5,7 @@ import { Folder, Settings } from 'kubai-icons-react';
 import { Check } from 'lucide-react';
 import { useState } from 'react';
 
-import { getJson, putJson } from '../lib/api';
-import { getDesktopBridge } from '../lib/local-overlay';
+import { control } from '../lib/control';
 import { DirectoryInput } from './DirectoryInput';
 import { FooterActions } from './FooterActions';
 import { LocalOverlayControls } from './LocalOverlayControls';
@@ -19,7 +18,7 @@ import { SettingsRow, SettingsSection } from './SettingsSection';
 export function SettingsPanel() {
   const settings = useQuery({
     queryKey: ['settings'],
-    queryFn: () => getJson<AppSettings>('/api/settings'),
+    queryFn: control.getSettings,
   });
 
   if (settings.error) {
@@ -50,7 +49,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
 
   const save = useMutation({
     mutationFn: async () => {
-      const latest = await getJson<AppSettings>('/api/settings');
+      const latest = await control.getSettings();
 
       const next = {
         ...latest,
@@ -59,7 +58,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
         kugouCacheDir: draft.kugouCacheDir,
       };
 
-      await putJson('/api/settings', next);
+      await control.setSettings(next);
 
       return next;
     },
@@ -67,12 +66,6 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
       setSaved(next);
       setMessage('已保存，正在重新连接服务。');
       queries.setQueryData(['settings'], next);
-
-      if (!getDesktopBridge() && next.port !== initial.port) {
-        window.setTimeout(() => {
-          location.href = `http://127.0.0.1:${next.port}/control`;
-        }, 1000);
-      }
     },
   });
 

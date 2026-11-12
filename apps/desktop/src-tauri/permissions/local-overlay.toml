@@ -4,6 +4,16 @@ description = "Read and update only the desktop lyric window."
 commands.allow = ["local_overlay_get", "local_overlay_set"]
 
 [[permission]]
+identifier = "desktop-control"
+description = "Call core controls and subscribe to state from the main control window."
+commands.allow = [
+  "control_request",
+  "control_install_plugin",
+  "control_subscribe",
+  "control_unsubscribe",
+]
+
+[[permission]]
 identifier = "local-lyrics-interaction"
 description = "Move and resize only the native lyric window."
 commands.allow = ["local_overlay_drag", "local_overlay_size"]

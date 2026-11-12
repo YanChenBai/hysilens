@@ -2,18 +2,14 @@ import { Button, FieldError } from '@hysilens/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Folder } from 'kubai-icons-react';
 
+import { control } from '../lib/control';
+
 /**
  * 请求 host 在系统文件管理器中打开用户 plugin 目录
  */
 export function OpenPluginDirectoryButton() {
   const open = useMutation({
-    mutationFn: async () => {
-      const response = await fetch('/api/plugins/directory', { method: 'POST' });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-    },
+    mutationFn: control.openPluginDirectory,
   });
 
   return (

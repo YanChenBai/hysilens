@@ -42,7 +42,7 @@ pub fn watch_drag(app: AppHandle) {
 
 /// `main` 窗口的注入脚本
 ///
-/// 它暴露冻结的 `window.__HYSILENS_DESKTOP__`，内含 `getOverlay` 与 `setOverlay`，
+/// 它暴露冻结的 `window.__HYSILENS_DESKTOP__`，声明核心 IPC 能力并提供 `getOverlay` 与 `setOverlay`，
 /// 二者是 `local_overlay_get` 和 `local_overlay_set` 的薄封装；随后派发
 /// `hysilens:desktop-ready`，让页面在初始化时就能发现桌面 host；只有 `/control`
 /// 或 `/settings` 的顶层 frame 会获得该 API，歌词 webview 和 plugin 文档 URL 没有
@@ -51,6 +51,7 @@ pub const CONTROL_BRIDGE: &str = r#"
 if (window === window.top && ['/control', '/settings'].includes(location.pathname)) {
   Object.defineProperty(window, '__HYSILENS_DESKTOP__', {
     value: Object.freeze({
+      controlIpc: true,
       getOverlay: () => window.__TAURI_INTERNALS__.invoke('local_overlay_get'),
       setOverlay: settings => window.__TAURI_INTERNALS__.invoke('local_overlay_set', { settings }),
     }),
@@ -363,6 +364,20 @@ fn authorize(label: &str, url: &Url, state: &DesktopState) -> anyhow::Result<()>
     );
 
     Ok(())
+}
+
+/// 校验核心控制 IPC 的调用窗口，复用当前控制页面的导航边界
+///
+/// # Errors
+/// 窗口未授权、应用正在关闭或状态锁损坏时返回错误
+pub fn authorize_control(window: &WebviewWindow) -> anyhow::Result<()> {
+    let url = window.url()?;
+    let shared = window.state::<SharedDesktop>();
+    let state = shared
+        .lock()
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+
+    authorize(window.label(), &url, &state)
 }
 
 /// 把当前 [`OverlaySettings`] 返回给控制页面

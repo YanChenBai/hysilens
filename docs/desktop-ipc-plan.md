@@ -1,29 +1,33 @@
 # 桌面主界面 IPC 迁移
 
-主窗口目前通过本地 HTTP 请求和 WebSocket 控制进程内服务；桌面已有的悬浮窗开关则使用 Tauri IPC
-本次把主窗口的控制与状态订阅统一到 IPC，继续由 `hysilens-core` 持有播放器、配置、plugin registry 和诊断状态
+主窗口的控制与状态订阅统一使用 Tauri IPC，由 `hysilens-core` 持有播放器、配置、plugin registry 和诊断状态
+原来用于主界面的 HTTP 控制路由已经移除，主窗口不保留 HTTP/WebSocket 回退
 
 ## 边界
 
 - 桌面顶层 `main` 窗口的 `/control`、`/settings` 页面使用 IPC
-- 浏览器控制页和 headless 服务保留 HTTP/WebSocket 通信
+- 主控制页只使用 IPC，浏览器访问控制页时不回退到 HTTP/WebSocket
+- headless 服务保留 OBS 与歌词渲染所需的只读资源和状态通道
 - OBS、歌词窗口、预览 iframe 与 plugin 的页面及资源继续通过本地 HTTP 提供
 - 不通过 IPC 代理任意 URL，不重新启动第二份采集服务
 - 保持现有界面、React Query 缓存键、plugin SDK 和 snapshot 协议
 
-## 实施顺序
+## 实施结果
 
-1. 提取核心控制入口，HTTP handler 与 IPC 共用服务操作和校验
-2. Tauri host 管理当前核心服务句柄，服务重启时更新句柄
-3. 注册有明确参数的控制 command，只授权当前主窗口、顶层 frame 和控制页面
-4. 增加前端控制 client，迁移设置、字体、目录选择、诊断、酷狗增强和 plugin 管理
-5. plugin 安装通过 IPC 二进制请求传递 ZIP，不转成 JSON 数字数组
-6. 主窗口的状态、plugin 变更通知和播放控制迁到 IPC channel；浏览器继续使用 WebSocket
-7. 补充通信选择、错误传播、权限边界、订阅清理及重连测试
+- [x] 提取进程内核心控制入口，移除原来用于主界面的 HTTP 控制路由
+- [x] Tauri host 管理当前核心服务句柄，服务重启时更新句柄
+- [x] 注册有明确参数的控制 command，复用主控制窗口的权限校验
+- [x] 迁移设置、字体、目录选择、诊断、酷狗增强和 plugin 管理
+- [x] plugin ZIP 通过二进制 IPC 安装，不转成 JSON 数字数组
+- [x] 主窗口的状态、plugin 变更通知和播放控制使用 IPC channel
+- [x] 补充无 HTTP 降级、错误传播、旧接口移除、状态增量、订阅清理及重连通知的单元测试
+
+HTTP 只保留 `/api/events`、`/api/plugins`、`/api/plugins/{id}/config`、`/api/plugins/{id}/view` 与 `/plugins/{id}/{path}`，供歌词页面读取状态、元数据和资源
+事件 WebSocket 只接受 clock 探测，不再接受播放控制命令
 
 ## 生命周期与错误
 
-- IPC 与 HTTP 使用同一份 reducer、设置及 plugin registry
+- IPC 操作和歌词渲染使用同一份 reducer、设置及 plugin registry
 - 服务未就绪或重启期间返回明确状态，订阅在新服务就绪后恢复
 - 页面卸载或订阅替换时释放旧 channel；服务重启时更新 snapshot epoch 并刷新缓存
 - IPC 失败不静默切回 HTTP，避免重复执行删除、安装、启动或诊断操作
@@ -32,15 +36,17 @@
 
 ## 验证
 
-- 前端：`vp check`、`vp run check:types`、`vp test run`
-- Rust 编译前：`vp run @hysilens/desktop#build:web`
-- Rust：`cargo fmt --all --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace --all-targets`
-- 手动：主窗口与浏览器控制页、服务端口变更、主窗口关闭再打开、plugin 安装与删除、目录选择、诊断、酷狗增强
+- `vp run check:types` 与 `vp run @hysilens/desktop#build:web` 通过
+- `vp test run`：103 项通过
+- `cargo fmt --all --check` 与 `cargo clippy --workspace --all-targets -- -D warnings` 通过
+- `cargo test --workspace --all-targets`：143 项通过，6 项忽略
+- 全仓 `vp check` 仍被未改动的 `plugins/scroll/package.json`、`plugins/scroll/tsconfig.json` 格式问题阻挡
+- 尚未手动验证：主窗口、浏览器控制页拒绝降级、服务端口变更、主窗口关闭再打开、plugin 安装与删除、目录选择、诊断、酷狗增强
 - 按 `AGENTS.md` 不自动启动应用、服务器或 smoke；窗口和播放器交互由用户手动验证
 
 ## 完成条件
 
 - 桌面主窗口不再用 HTTP/WebSocket 发起控制操作或订阅状态
-- 浏览器控制页、OBS 和 plugin 资源保持可用
+- 浏览器控制页不发送 HTTP 控制请求，OBS 和 plugin 资源保持可用
 - 参数校验、权限限制、错误反馈和订阅释放有对应验证
 - PR 正文记录实际验证结果，未完成手动验证前保持 Draft

@@ -86,6 +86,7 @@ hysilens link               # 或者链接到用户插件目录，在应用中�
 ```mermaid
 flowchart LR
   Players["全民 K 歌 / QQ 音乐 / 酷狗"] --> Core["hysilens-core<br/>采集 · 歌词解析 · HTTP · WebSocket"]
+  Control["桌面控制界面"] <-->|Tauri IPC| Core
   Core -- 事件 WebSocket --> Host["PluginHost<br/>桌面预览 / OBS / 悬浮窗"]
   Host -- MessageChannel --> Plugin["歌词插件<br/>沙箱 iframe"]
   CLI["hysilens CLI"] -- "build / pack" --> Plugin

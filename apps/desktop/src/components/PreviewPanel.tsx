@@ -3,8 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Music, Play, Radio } from 'kubai-icons-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { getJson } from '../lib/api';
-import type { PluginCatalog } from '../lib/api';
+import { control } from '../lib/control';
 import { useSession } from '../lib/session';
 import { CopySourceButton } from './CopySourceButton';
 
@@ -53,7 +52,7 @@ export function PreviewPanel({ active }: { active: string }) {
 
   const catalog = useQuery({
     queryKey: ['plugins'],
-    queryFn: () => getJson<PluginCatalog>('/api/plugins'),
+    queryFn: control.listPlugins,
   });
 
   const viewport = catalog.data?.plugins.find(plugin => plugin.id === active)?.viewport;

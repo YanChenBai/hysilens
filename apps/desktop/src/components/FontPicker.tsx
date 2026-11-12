@@ -2,7 +2,7 @@ import { Combobox, FieldError, Spinner } from '@hysilens/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronDown } from 'lucide-react';
 
-import { getJson } from '../lib/api';
+import { control } from '../lib/control';
 
 interface Props {
   /**
@@ -29,7 +29,7 @@ interface Props {
 export function FontPicker({ id, value, extraFonts, onChange }: Props) {
   const fonts = useQuery({
     queryKey: ['system-fonts'],
-    queryFn: () => getJson<string[]>('/api/fonts'),
+    queryFn: control.listFonts,
     staleTime: Infinity,
   });
 

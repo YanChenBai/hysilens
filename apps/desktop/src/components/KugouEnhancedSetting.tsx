@@ -16,33 +16,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, ExternalLink, Rocket } from 'kubai-icons-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { getJson, postJson, putJson } from '../lib/api';
+import { control } from '../lib/control';
+import type { EnhancedStatus } from '../lib/control';
 import { SettingsRow } from './SettingsSection';
-
-/**
- * `/api/kugou/enhanced` 返回的增强模式状态
- */
-interface EnhancedStatus {
-  enabled: boolean;
-
-  port: number;
-
-  /**
-   * 酷狗调试端口是否在本机监听
-   */
-  portOpen: boolean;
-
-  endpointAvailable: boolean;
-
-  kugouRunning: boolean;
-
-  /**
-   * 最近一次采样是否成功读到播放信息
-   */
-  connected: boolean;
-
-  error: string | null;
-}
 
 const statusKey = ['kugou-enhanced'];
 
@@ -184,7 +160,7 @@ export function KugouEnhancedSetting() {
    * Switch 的变更事件来自内部隐藏的 input，拿不到点击坐标；在开关上自行记录，
    * 让对话框与其他由 DialogTrigger 打开的对话框一样从点击处展开
    */
-  const control = useRef<HTMLElement>(null);
+  const switchControl = useRef<HTMLElement>(null);
   const launchRequest = useRef(0);
   const pointer = useRef<{ x: number; y: number } | null>(null);
 
@@ -197,13 +173,13 @@ export function KugouEnhancedSetting() {
 
   const status = useQuery({
     queryKey: statusKey,
-    queryFn: () => getJson<EnhancedStatus>('/api/kugou/enhanced'),
+    queryFn: control.getKugou,
     refetchInterval: 2000,
   });
 
   /* 增强模式是运行时开关：只写入该项并即时生效，不会重启服务或刷新界面 */
   const toggle = useMutation({
-    mutationFn: (enabled: boolean) => putJson('/api/kugou/enhanced', { enabled }),
+    mutationFn: control.setKugou,
     onSuccess: (_, enabled) => {
       queries.setQueryData<AppSettings>(['settings'], old =>
         old ? { ...old, kugouCdp: enabled } : old,
@@ -214,12 +190,12 @@ export function KugouEnhancedSetting() {
   });
 
   const launch = useMutation({
-    mutationFn: () => postJson<{ result: string }>('/api/kugou/enhanced/launch'),
+    mutationFn: control.launchKugou,
     onSettled: () => void queries.invalidateQueries({ queryKey: statusKey }),
   });
 
   const shortcut = useMutation({
-    mutationFn: () => postJson<{ path: string }>('/api/kugou/enhanced/shortcut'),
+    mutationFn: control.createKugouShortcut,
   });
 
   const { isSuccess: shortcutCreated, reset: resetShortcut } = shortcut;
@@ -256,7 +232,7 @@ export function KugouEnhancedSetting() {
       <SettingsRow label="酷狗增强模式" description={<StatusText status={status.data} />}>
         <div className="flex items-center gap-2">
           <Switch
-            ref={control}
+            ref={switchControl}
             aria-label="酷狗增强模式"
             checked={enabled}
             disabled={!status.data || toggle.isPending}
@@ -272,7 +248,7 @@ export function KugouEnhancedSetting() {
               if (checked) {
                 toggle.reset();
                 shortcut.reset();
-                setOrigin(pointer.current ?? centerOf(control.current));
+                setOrigin(pointer.current ?? centerOf(switchControl.current));
                 setOpen(true);
               } else {
                 toggle.mutate(false);

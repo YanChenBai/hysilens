@@ -5,9 +5,10 @@ import { parseOverlayConfig } from '@hysilens/protocol/config';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { getJson, loadConfig } from '../lib/api';
-import type { ConfigValues, PluginCatalog, PluginConfig } from '../lib/api';
+import { loadConfig } from '../lib/api';
+import type { ConfigValues } from '../lib/api';
 import { useOverlayViewport } from '../lib/local-overlay';
+import { pluginApi } from '../lib/plugin-api';
 import { pluginScale } from '../lib/plugin-scale';
 import { pluginFrameState } from '../lib/plugin-state';
 import { readSession, useSession } from '../lib/session';
@@ -157,7 +158,7 @@ export function PluginView({ playground = false }: { playground?: boolean }) {
 
   const catalog = useQuery({
     queryKey: ['plugins'],
-    queryFn: () => getJson<PluginCatalog>('/api/plugins'),
+    queryFn: pluginApi.listPlugins,
   });
 
   const plugin = catalog.data?.plugins.find(item => item.id === options.renderer);
@@ -172,7 +173,7 @@ export function PluginView({ playground = false }: { playground?: boolean }) {
         throw new Error('未找到歌词插件');
       }
 
-      const value = await getJson<PluginConfig>(`/api/plugins/${plugin.id}/config`);
+      const value = await pluginApi.getPluginConfig(plugin.id);
 
       return loadConfig(plugin, value.config);
     },

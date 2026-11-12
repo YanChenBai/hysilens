@@ -2,6 +2,8 @@ import type { ClientMessage, ServerMessage, Snapshot } from '@hysilens/protocol'
 import { parseOverlayConfig } from '@hysilens/protocol/config';
 import { useEffect, useSyncExternalStore } from 'react';
 
+import { isControlPage, sendControl, subscribeControl } from './control';
+
 export interface SessionState {
   /**
    * 服务端最新的 snapshot，首次更新前为 null
@@ -49,6 +51,8 @@ let users = 0;
 let retry = 0;
 let ping = 0;
 let bestRoundTrip = Infinity;
+let releaseIpc: (() => void) | null = null;
+let ipcGeneration = 0;
 
 function publish(next: Partial<SessionState>) {
   state = { ...state, ...next };
@@ -60,11 +64,23 @@ export function readSession(): SessionState {
 }
 
 export function send(message: ClientMessage): void {
-  if (socket?.readyState !== WebSocket.OPEN) {
+  if (state.connection !== 'connected') {
     throw new Error('本机服务尚未连接');
   }
 
-  socket.send(JSON.stringify(message));
+  const generation = ipcGeneration;
+
+  void sendControl(message)
+    .then(response => {
+      if (response && generation === ipcGeneration && users) {
+        apply(response);
+      }
+    })
+    .catch(error => {
+      if (generation === ipcGeneration && users) {
+        publish({ error: String(error) });
+      }
+    });
 }
 
 export function sendOverlay(
@@ -146,12 +162,61 @@ function applySnapshot(next: Extract<ServerMessage, { kind: 'state' }>['state'])
   publish({ snapshot: { ...next, document }, lastStateAt: performance.now(), error: '' });
 }
 
+function connectIpc() {
+  releaseIpc = subscribeControl(
+    event => {
+      if (event.kind === 'connection') {
+        ipcGeneration++;
+        window.clearInterval(ping);
+        publish({ connection: event.connected ? 'connected' : 'disconnected', clockOffset: null });
+
+        if (event.connected) {
+          bestRoundTrip = Infinity;
+          const sendPing = () => send({ kind: 'clock', clientMs: performance.now() });
+          sendPing();
+          ping = window.setInterval(sendPing, 1000);
+        }
+
+        return;
+      }
+
+      if (event.kind === 'resync') {
+        emitPlugin({ kind: 'resync' });
+
+        return;
+      }
+
+      apply(event);
+    },
+    error => {
+      if (!users) {
+        return;
+      }
+
+      window.clearInterval(ping);
+      ipcGeneration++;
+      publish({ connection: 'disconnected', error: error.message });
+      retry = window.setTimeout(() => {
+        releaseIpc?.();
+        releaseIpc = null;
+        connect();
+      }, 1000);
+    },
+  );
+}
+
 function connect() {
   if (!users) {
     return;
   }
 
   publish({ connection: 'connecting' });
+
+  if (isControlPage()) {
+    connectIpc();
+
+    return;
+  }
 
   const current = new WebSocket(
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/events`,
@@ -195,7 +260,7 @@ function connect() {
 }
 
 /**
- * 保持 event socket 打开，但不订阅 session 状态更新
+ * 保持状态通道打开，但不订阅 session 状态更新
  */
 export function acquireSession(): () => void {
   return acquire();
@@ -212,8 +277,11 @@ function acquire() {
     users--;
 
     if (!users) {
+      ipcGeneration++;
       window.clearTimeout(retry);
       window.clearInterval(ping);
+      releaseIpc?.();
+      releaseIpc = null;
 
       if (socket) {
         socket.onclose = null;

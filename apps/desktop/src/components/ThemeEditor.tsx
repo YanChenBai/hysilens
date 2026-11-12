@@ -6,8 +6,9 @@ import { Code, Languages, Palette, Sliders, Type } from 'kubai-icons-react';
 import { Save } from 'lucide-react';
 import { useState } from 'react';
 
-import { checkConfig, getJson, putJson } from '../lib/api';
-import type { PluginCatalog, PluginConfig } from '../lib/api';
+import { checkConfig } from '../lib/api';
+import type { PluginConfig } from '../lib/api';
+import { control } from '../lib/control';
 import { FooterActions } from './FooterActions';
 import { SettingsSection } from './SettingsSection';
 import { ThemeField } from './ThemeField';
@@ -81,7 +82,7 @@ export function ThemeEditor({
 
   const save = useMutation({
     mutationFn: async (submittedDraft: string) => {
-      const catalog = await getJson<PluginCatalog>('/api/plugins');
+      const catalog = await control.listPlugins();
       const latest = catalog.plugins.find(item => item.id === plugin.id);
 
       if (!latest) {
@@ -89,7 +90,7 @@ export function ThemeEditor({
       }
 
       const config = checkConfig(latest, JSON.parse(submittedDraft));
-      await putJson(`/api/plugins/${plugin.id}/config`, config);
+      await control.setPluginConfig(plugin.id, config);
 
       return config;
     },
