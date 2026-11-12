@@ -9,6 +9,7 @@ import { sendOverlay } from '../lib/session';
 import { Choice } from './Choice';
 import { InstallPluginButton } from './InstallPluginButton';
 import { OpenPluginDirectoryButton } from './OpenPluginDirectoryButton';
+import { RemovePluginButton } from './RemovePluginButton';
 import { SettingsRow, SettingsSection } from './SettingsSection';
 import { ThemeEditor } from './ThemeEditor';
 
@@ -73,7 +74,7 @@ export function PluginPanel({ active }: { active: string }) {
             />
           </div>
         </SettingsRow>
-        <div className="border-border/50 grid grid-cols-3 items-start gap-1 border-t py-2">
+        <div className="border-border/50 grid auto-cols-fr grid-flow-col items-start gap-1 border-t py-2">
           <InstallPluginButton
             onInstalled={manifest => {
               setSwitchError('');
@@ -94,9 +95,12 @@ export function PluginPanel({ active }: { active: string }) {
             isLoading={rescan.isPending}
             onClick={() => rescan.mutate()}
           >
-            <RotateCw color="#60a5fa" size={20} trigger="parent" />
+            <RotateCw color="#60a5fa" size={24} trigger="parent" />
             重新扫描
           </Button>
+          {plugin && !plugin.id.startsWith('builtin:') ? (
+            <RemovePluginButton key={plugin.id} plugin={plugin} />
+          ) : null}
         </div>
         <FieldError show={Boolean(error)}>{error}</FieldError>
         {notice && !error ? (

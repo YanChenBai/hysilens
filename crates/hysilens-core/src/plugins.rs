@@ -82,6 +82,36 @@ pub fn directory(id: &str) -> anyhow::Result<Option<PathBuf>> {
         .find(|directory| directory.join(MANIFEST_FILE).is_file()))
 }
 
+/// 移除用户安装的 plugin；开发链接只移除链接，已保存的配置保留
+///
+/// # Errors
+/// id 无效、属于内置 plugin、目录越界或文件系统操作失败时返回错误
+pub fn remove(root: &Path, id: &str) -> anyhow::Result<()> {
+    ensure!(valid_id(id), "插件标识无效");
+    ensure!(!is_builtin(id), "内置插件不能删除");
+
+    let base = root.canonicalize().context("无法读取插件目录")?;
+    let target = base.join(id);
+    let metadata = std::fs::symlink_metadata(&target).context("插件不存在或无法读取")?;
+
+    if metadata.file_type().is_symlink() {
+        #[cfg(windows)]
+        std::fs::remove_dir(&target).context("无法移除插件链接")?;
+        #[cfg(not(windows))]
+        std::fs::remove_file(&target).context("无法移除插件链接")?;
+
+        return Ok(());
+    }
+
+    let resolved = target.canonicalize()?;
+    ensure!(resolved.parent() == Some(base.as_path()), "插件目录越界");
+    ensure!(metadata.is_dir(), "插件路径不是文件夹");
+
+    std::fs::remove_dir_all(&resolved).context("无法删除插件目录")?;
+
+    Ok(())
+}
+
 /// 存放每个 plugin 一个 config 文件的目录；`HYSILENS_PLUGIN_CONFIGS_DIR` 会覆盖它
 pub fn config_root() -> PathBuf {
     std::env::var_os("HYSILENS_PLUGIN_CONFIGS_DIR")
@@ -636,6 +666,61 @@ mod tests {
 
         assert!(error.to_string().contains("hysilens link"));
         assert_eq!(manifest_at(&link, "example").unwrap()["name"], "Example");
+        assert!(source.path().join("index.js").is_file());
+    }
+
+    #[test]
+    fn removes_only_the_selected_external_plugin() {
+        let root = tempfile::tempdir().unwrap();
+
+        publish(&root.path().join("example"), &sample());
+        std::fs::create_dir(root.path().join("other")).unwrap();
+
+        remove(root.path(), "example").unwrap();
+
+        assert!(!root.path().join("example").exists());
+        assert!(root.path().join("other").is_dir());
+        assert!(remove(root.path(), "example").is_err());
+    }
+
+    #[test]
+    fn refuses_to_remove_builtin_plugins_and_unsafe_paths() {
+        let root = tempfile::tempdir().unwrap();
+
+        publish(&root.path().join("example"), &sample());
+
+        for id in ["builtin:example", "../example", "", ".", "example/.."] {
+            assert!(remove(root.path(), id).is_err(), "{id}");
+        }
+
+        assert!(root.path().join("example/index.js").is_file());
+    }
+
+    #[test]
+    fn removes_development_links_without_deleting_the_source() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let link = root.path().join("example");
+
+        publish(source.path(), &sample());
+
+        #[cfg(windows)]
+        assert!(
+            std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&link)
+                .arg(source.path())
+                .output()
+                .unwrap()
+                .status
+                .success()
+        );
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(source.path(), &link).unwrap();
+
+        remove(root.path(), "example").unwrap();
+
+        assert!(std::fs::symlink_metadata(link).is_err());
         assert!(source.path().join("index.js").is_file());
     }
 

@@ -17,7 +17,7 @@ use axum::{
     },
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use std::{
     borrow::Cow,
@@ -60,6 +60,8 @@ impl Drop for RuntimeGuard {
 
 enum Action {
     Overlay(crate::settings::OverlaySettings),
+
+    PluginRemoved(String),
 
     Capture(CaptureEvent),
 
@@ -225,6 +227,12 @@ pub async fn serve_on(
                     coordinator.state.show_translation = settings.translation;
                     coordinator.state.overlay = settings;
                 }
+                Action::PluginRemoved(id) => {
+                    if coordinator.state.overlay.renderer == id {
+                        coordinator.state.overlay.renderer =
+                            crate::settings::OverlaySettings::default().renderer;
+                    }
+                }
                 Action::Capture(CaptureEvent::Playback(playback, document)) => {
                     coordinator.sample(playback, document)
                 }
@@ -332,6 +340,7 @@ pub async fn serve_on(
             // 仅对该路由覆盖下方较小的默认 body 上限
             post(install_plugin).layer(DefaultBodyLimit::max(crate::plugins::MAX_PACKAGE_BYTES)),
         )
+        .route("/api/plugins/{id}", delete(remove_plugin))
         .route("/api/plugins/{id}/view", get(plugin_view))
         .route(
             "/api/plugins/{id}/config",
@@ -429,6 +438,38 @@ async fn install_plugin(
 
     match result {
         Ok(Ok(manifest)) => Json(manifest).into_response(),
+        Ok(Err(error)) => (StatusCode::BAD_REQUEST, format!("{error:#}")).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
+}
+
+/// 删除外部 plugin 并通知所有客户端；当前使用的 plugin 由 reducer 切回默认值
+async fn remove_plugin(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let registry = state.plugins.clone();
+    let removed_id = id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        crate::plugins::remove(&crate::plugins::root(), &removed_id)?;
+
+        anyhow::Ok(registry.rescan())
+    })
+    .await;
+
+    match result {
+        Ok(Ok(catalog)) => {
+            if state.actions.send(Action::PluginRemoved(id)).await.is_err() {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+
+            catalog_json(&catalog).into_response()
+        }
         Ok(Err(error)) => (StatusCode::BAD_REQUEST, format!("{error:#}")).into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
     }

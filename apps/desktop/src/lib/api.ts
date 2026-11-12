@@ -100,6 +100,19 @@ export async function rescanPlugins(): Promise<PluginCatalog> {
 }
 
 /**
+ * 删除外部 plugin；保留已保存的配置
+ */
+export async function removePlugin(id: string): Promise<PluginCatalog> {
+  const response = await fetch(`/api/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+  if (!response.ok) {
+    throw new Error((await response.text()) || `删除失败（${response.status}）`);
+  }
+
+  return response.json() as Promise<PluginCatalog>;
+}
+
+/**
  * plugin 的 schema 以及当前已存储的 config 值
  */
 export interface PluginConfig {

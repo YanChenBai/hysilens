@@ -27,7 +27,7 @@ export function OpenPluginDirectoryButton() {
         isLoading={open.isPending}
         onClick={() => open.mutate()}
       >
-        <Folder color="#d4ac64" size={20} trigger="parent" />
+        <Folder color="#d4ac64" size={24} trigger="parent" />
         打开目录
       </Button>
       <FieldError show={Boolean(open.error)}>{open.error?.message}</FieldError>

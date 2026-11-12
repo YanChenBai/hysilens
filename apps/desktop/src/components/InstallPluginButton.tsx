@@ -66,7 +66,7 @@ export function InstallPluginButton({
         isLoading={install.isPending}
         onClick={() => input.current?.click()}
       >
-        <PackagePlus color="#a78bfa" size={20} trigger="parent" />
+        <PackagePlus color="#a78bfa" size={24} trigger="parent" />
         安装插件
       </Button>
     </>
