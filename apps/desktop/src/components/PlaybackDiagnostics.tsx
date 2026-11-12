@@ -117,10 +117,15 @@ export function PlaybackDiagnostics() {
           </DialogContent>
         </Dialog>
       </SettingsRow>
-      <p role="status" className="text-muted-foreground text-xs break-all empty:hidden">
+      <p
+        role="status"
+        className="text-muted-foreground py-2 text-xs leading-relaxed break-all empty:hidden"
+      >
         {message}
       </p>
-      <FieldError show={Boolean(report.error)}>{report.error?.message}</FieldError>
+      <FieldError show={Boolean(report.error)} className="py-2">
+        {report.error?.message}
+      </FieldError>
     </SettingsSection>
   );
 }

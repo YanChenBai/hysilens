@@ -165,16 +165,23 @@ function Workspace() {
             aria-label="歌词配置"
           >
             <Tabs defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="mx-5 my-4 shrink-0" aria-label="歌词设置">
-                <TabsTrigger value="appearance" className="min-w-0 flex-1 gap-1 px-2">
+              <TabsList
+                className="mt-4 shrink-0 justify-start gap-2 rounded-none bg-transparent px-5 py-0 shadow-[inset_0_-1px_0_var(--color-border)]"
+                indicatorClassName="top-auto bottom-0 h-0.5 translate-y-0 rounded-none bg-foreground shadow-none"
+                aria-label="歌词设置"
+              >
+                <TabsTrigger
+                  value="appearance"
+                  className="min-w-0 gap-1 rounded-none px-2 pt-2 pb-4"
+                >
                   <Palette color="#a78bfa" trigger="parent" />
                   插件配置
                 </TabsTrigger>
-                <TabsTrigger value="playback" className="min-w-0 flex-1 gap-1 px-2">
+                <TabsTrigger value="playback" className="min-w-0 gap-1 rounded-none px-2 pt-2 pb-4">
                   <Music color="#34d399" trigger="parent" />
                   播放设置
                 </TabsTrigger>
-                <TabsTrigger value="settings" className="min-w-0 flex-1 gap-1 px-2">
+                <TabsTrigger value="settings" className="min-w-0 gap-1 rounded-none px-2 pt-2 pb-4">
                   <Settings color="#60a5fa" trigger="parent" />
                   系统设置
                 </TabsTrigger>
@@ -185,13 +192,13 @@ function Workspace() {
                 </TabsContent>
                 <TabsContent
                   value="playback"
-                  className="mt-0 h-full overflow-y-auto px-5 pt-1 pb-6"
+                  className="mt-0 h-full overflow-y-auto px-5 pt-5 pb-6"
                 >
                   <PlaybackPanel />
                 </TabsContent>
                 <TabsContent
                   value="settings"
-                  className="mt-0 h-full overflow-y-auto px-5 pt-1 pb-6"
+                  className="mt-0 h-full overflow-y-auto px-5 pt-5 pb-6"
                 >
                   <div className="space-y-7">
                     <SettingsSection title="外观" icon={<Palette size={20} color="#a78bfa" />}>

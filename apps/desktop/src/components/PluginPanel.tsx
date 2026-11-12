@@ -53,7 +53,7 @@ export function PluginPanel({ active }: { active: string }) {
   const error = switchError || (failure ? String(failure) : '');
 
   return (
-    <section className="h-full min-h-0 space-y-7 overflow-y-auto px-5 pt-1 pb-6">
+    <section className="h-full min-h-0 space-y-7 overflow-y-auto px-5 pt-5 pb-6">
       <SettingsSection title="歌词插件" icon={<Package size={20} color="#a78bfa" />}>
         <SettingsRow label="当前插件">
           <div className="w-44 max-w-full">
