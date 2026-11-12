@@ -61,6 +61,7 @@ export function InstallPluginButton({
         type="button"
         variant="ghost"
         size="sm"
+        className="h-16 w-full min-w-0 flex-col gap-2 px-1"
         title="安装 hysilens pack 生成的 zip 插件包"
         isLoading={install.isPending}
         onClick={() => input.current?.click()}

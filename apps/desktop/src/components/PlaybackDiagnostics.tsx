@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
   FieldError,
+  Spinner,
 } from '@hysilens/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Activity } from 'kubai-icons-react';
@@ -79,9 +80,14 @@ export function PlaybackDiagnostics() {
           <DialogTrigger
             render={<Button type="button" variant="secondary" size="sm" />}
             aria-label="导出播放诊断报告"
+            aria-busy={report.isPending}
             disabled={report.isPending}
           >
-            <Download className="size-3.5" aria-hidden="true" />
+            {report.isPending ? (
+              <Spinner className="size-3.5" />
+            ) : (
+              <Download className="size-3.5" aria-hidden="true" />
+            )}
             {report.isPending ? '正在导出…' : '导出报告'}
           </DialogTrigger>
           <DialogContent>

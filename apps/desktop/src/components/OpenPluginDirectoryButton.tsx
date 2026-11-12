@@ -22,6 +22,7 @@ export function OpenPluginDirectoryButton() {
         type="button"
         variant="ghost"
         size="sm"
+        className="h-16 w-full min-w-0 flex-col gap-2 px-1"
         aria-label="打开插件目录"
         isLoading={open.isPending}
         onClick={() => open.mutate()}

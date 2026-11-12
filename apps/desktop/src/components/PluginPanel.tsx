@@ -73,7 +73,7 @@ export function PluginPanel({ active }: { active: string }) {
             />
           </div>
         </SettingsRow>
-        <div className="flex flex-wrap items-center gap-2 py-2">
+        <div className="border-border/50 grid grid-cols-3 items-start gap-1 border-t py-2">
           <InstallPluginButton
             onInstalled={manifest => {
               setSwitchError('');
@@ -89,6 +89,7 @@ export function PluginPanel({ active }: { active: string }) {
             type="button"
             variant="ghost"
             size="sm"
+            className="h-16 w-full min-w-0 flex-col gap-2 px-1"
             aria-label="重新扫描插件"
             isLoading={rescan.isPending}
             onClick={() => rescan.mutate()}

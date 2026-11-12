@@ -51,7 +51,7 @@ export function DirectoryInput({ id, label, value, onChange }: Props) {
         />
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="icon"
           className="size-9 shrink-0 rounded-xl"
           aria-label={`选择${label}`}
