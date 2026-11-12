@@ -36,7 +36,9 @@ impl Catalog {
             }
 
             match lyrics::load_document(&path) {
-                Ok(document) => {
+                Ok(mut document) => {
+                    document.compact();
+
                     let key = format!("{:x}", Sha256::digest(filename.as_bytes()));
 
                     catalog.entries.push(Entry {

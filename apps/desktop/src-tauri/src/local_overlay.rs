@@ -258,7 +258,7 @@ pub struct DesktopState {
     /// 当前 overlay 状态，即 `local_overlay_get` 的返回值
     settings: OverlaySettings,
 
-    /// 主窗口开始关闭后置位，此后所有 command 都会拒绝
+    /// 应用开始退出后置位，此后所有 command 都会拒绝
     closing: bool,
 
     /// 正在进行的 pointer drag
@@ -591,7 +591,8 @@ fn lyric_url(control: &Url) -> Url {
 
 /// 把 `settings` 应用到 overlay 窗口，首次打开时创建窗口
 ///
-/// 隐藏的窗口会被复用，页面因此保留状态；必须在主线程运行；创建时配置窗口
+/// 关闭 overlay 时释放其 WebView，再次打开时按已保存的 geometry 重建；必须在主线程运行
+/// 创建时配置窗口
 /// （透明、无边框、置顶、不显示在任务栏、不可聚焦），每次调用都会在显示前重新
 /// 应用尺寸、位置、click-through 与置顶状态
 fn apply(app: &AppHandle, state: &DesktopState, settings: &OverlaySettings) -> anyhow::Result<()> {
@@ -599,7 +600,7 @@ fn apply(app: &AppHandle, state: &DesktopState, settings: &OverlaySettings) -> a
 
     if !settings.enabled {
         if let Some(window) = existing {
-            window.hide()?;
+            window.destroy()?;
         }
 
         return Ok(());

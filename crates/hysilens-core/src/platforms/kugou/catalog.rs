@@ -35,15 +35,19 @@ pub fn read(path: &Path) -> anyhow::Result<Catalog> {
             .into_owned();
 
         match lyrics::load_document(&path) {
-            Ok(document) => catalog.entries.push(Entry {
-                key: format!("{:x}", Sha256::digest(filename.as_bytes())),
-                filename,
-                title: document.metadata.title.clone(),
-                artist: document.metadata.artist.clone(),
-                album: document.metadata.album.clone(),
-                line_count: document.tracks[0].lines.len(),
-                document: Arc::new(document),
-            }),
+            Ok(mut document) => {
+                document.compact();
+
+                catalog.entries.push(Entry {
+                    key: format!("{:x}", Sha256::digest(filename.as_bytes())),
+                    filename,
+                    title: document.metadata.title.clone(),
+                    artist: document.metadata.artist.clone(),
+                    album: document.metadata.album.clone(),
+                    line_count: document.tracks[0].lines.len(),
+                    document: Arc::new(document),
+                });
+            }
             Err(error) => catalog.issues.push(format!("{filename}: {error:#}")),
         }
     }

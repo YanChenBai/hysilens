@@ -20,6 +20,7 @@ use axum::{
     routing::{get, post},
 };
 use std::{
+    borrow::Cow,
     path::PathBuf,
     sync::{
         Arc,
@@ -374,7 +375,7 @@ async fn embedded(uri: Uri) -> Response {
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     (
         [(axum::http::header::CONTENT_TYPE, mime.to_string())],
-        asset.data.into_owned(),
+        asset_bytes(asset.data),
     )
         .into_response()
 }
@@ -538,14 +539,38 @@ async fn plugin_view(
 const PLUGIN_CORS: (axum::http::HeaderName, &str) =
     (axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 
-fn plugin_bytes(id: &str, path: &str) -> anyhow::Result<Vec<u8>> {
+fn asset_bytes(data: Cow<'static, [u8]>) -> axum::body::Bytes {
+    match data {
+        Cow::Borrowed(bytes) => axum::body::Bytes::from_static(bytes),
+        Cow::Owned(bytes) => bytes.into(),
+    }
+}
+
+#[cfg(test)]
+mod asset_tests {
+    use super::*;
+
+    #[test]
+    fn serves_static_and_owned_assets_without_copying_their_buffers() {
+        static FONT: &[u8] = b"embedded font bytes";
+        let borrowed = asset_bytes(Cow::Borrowed(FONT));
+        let owned = vec![1, 2, 3, 4];
+        let pointer = owned.as_ptr();
+        let owned = asset_bytes(Cow::Owned(owned));
+
+        assert_eq!(borrowed.as_ptr(), FONT.as_ptr());
+        assert_eq!(borrowed.as_ref(), FONT);
+        assert_eq!(owned.as_ptr(), pointer);
+        assert_eq!(owned.as_ref(), &[1, 2, 3, 4]);
+    }
+}
+
+fn plugin_bytes(id: &str, path: &str) -> anyhow::Result<axum::body::Bytes> {
     anyhow::ensure!(crate::plugins::valid_id(id), "插件标识无效");
 
     // 已安装的包是权威来源；不要把旧的嵌入式资源混进其中
     if let Some(directory) = crate::plugins::directory(id)? {
-        return Ok(std::fs::read(crate::plugins::local_path(
-            &directory, path,
-        )?)?);
+        return Ok(std::fs::read(crate::plugins::local_path(&directory, path)?)?.into());
     }
 
     anyhow::ensure!(
@@ -560,7 +585,7 @@ fn plugin_bytes(id: &str, path: &str) -> anyhow::Result<Vec<u8>> {
         "plugins/{}/{path}",
         crate::plugins::local_name(id)
     ))
-    .map(|asset| asset.data.into_owned())
+    .map(|asset| asset_bytes(asset.data))
     .ok_or_else(|| anyhow::anyhow!("插件文件不存在"))
 }
 

@@ -158,6 +158,40 @@ pub struct Document {
     pub warnings: Vec<String>,
 }
 
+impl Document {
+    /// cache 文档会长期驻留，解析完成后归还文本与逐词数组的预留容量
+    pub(crate) fn compact(&mut self) {
+        self.id.shrink_to_fit();
+        self.filename.shrink_to_fit();
+        self.metadata.title.shrink_to_fit();
+        self.metadata.artist.shrink_to_fit();
+        self.metadata.album.shrink_to_fit();
+
+        for track in &mut self.tracks {
+            track.kind.shrink_to_fit();
+
+            for line in &mut track.lines {
+                line.text.shrink_to_fit();
+
+                for token in &mut line.tokens {
+                    token.text.shrink_to_fit();
+                }
+
+                line.tokens.shrink_to_fit();
+            }
+
+            track.lines.shrink_to_fit();
+        }
+
+        for warning in &mut self.warnings {
+            warning.shrink_to_fit();
+        }
+
+        self.tracks.shrink_to_fit();
+        self.warnings.shrink_to_fit();
+    }
+}
+
 /// 歌词文件内存储的曲目元数据
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Metadata {
@@ -206,4 +240,46 @@ pub struct Catalog {
 
     /// 阻止文件被列出的错误
     pub issues: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compacts_retained_lyrics_without_changing_document_identity_or_wire_content() {
+        let mut text = String::with_capacity(1024);
+        text.push_str("歌词");
+        let mut tokens = Vec::with_capacity(128);
+        tokens.push(Token {
+            text: text.clone(),
+            start_ms: 0,
+            end_ms: 1000,
+        });
+        let mut lines = Vec::with_capacity(128);
+        lines.push(Line {
+            text,
+            start_ms: 0,
+            end_ms: Some(1000),
+            tokens,
+        });
+        let mut document = Document {
+            id: "identity".into(),
+            filename: "song.qrc".into(),
+            metadata: Metadata::default(),
+            tracks: vec![LyricTrack {
+                kind: "original".into(),
+                lines,
+            }],
+            warnings: vec!["warning".into()],
+        };
+        let before = serde_json::to_vec(&document).unwrap();
+
+        document.compact();
+
+        assert_eq!(serde_json::to_vec(&document).unwrap(), before);
+        assert_eq!(document.tracks[0].lines.capacity(), 1);
+        assert_eq!(document.tracks[0].lines[0].tokens.capacity(), 1);
+        assert_eq!(document.tracks[0].lines[0].text.capacity(), "歌词".len());
+    }
 }

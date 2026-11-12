@@ -139,9 +139,12 @@ pub(super) fn watch(app: AppHandle) {
 /// 或 overlay 窗口已不存在时返回 `None` 表示停止轮询
 fn tick(app: &AppHandle) -> anyhow::Result<Option<u64>> {
     let shared = app.state::<SharedDesktop>();
-    let mut state = shared
-        .lock()
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    // WebView2 创建期间会重入 UI event loop，跳过持锁中的 tick，避免主线程等待自身
+    let mut state = match shared.try_lock() {
+        Ok(state) => state,
+        Err(std::sync::TryLockError::WouldBlock) => return Ok(Some(100)),
+        Err(error) => return Err(anyhow::anyhow!(error.to_string())),
+    };
 
     if state.closing {
         return Ok(None);
