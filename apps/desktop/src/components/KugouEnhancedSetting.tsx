@@ -9,10 +9,12 @@ import {
   DialogFooter,
   DialogTitle,
   FieldError,
+  Spinner,
   Switch,
 } from '@hysilens/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { CircleCheck, ExternalLink, Rocket } from 'kubai-icons-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { getJson, postJson, putJson } from '../lib/api';
 import { SettingsRow } from './SettingsSection';
@@ -109,6 +111,57 @@ function centerOf(element: Element | null): { x: number; y: number } | null {
 }
 
 /**
+ * 在操作位置展示创建进度和结果
+ */
+function ShortcutButton({
+  pending,
+  success,
+  onCreate,
+  variant = 'ghost',
+}: {
+  pending: boolean;
+
+  success: boolean;
+
+  onCreate: () => void;
+
+  variant?: 'ghost' | 'secondary';
+}) {
+  let label = '创建快捷方式';
+  let icon = <ExternalLink color="#a78bfa" size={20} trigger="parent" />;
+
+  if (pending) {
+    label = '正在创建…';
+    icon = <Spinner />;
+  } else if (success) {
+    label = '已创建到桌面';
+    icon = <CircleCheck color="#34d399" size={20} trigger="parent" />;
+  }
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={variant}
+      disabled={pending}
+      className={success ? 'text-success' : undefined}
+      title="在桌面创建增强模式快捷方式；创建后可双击启动酷狗，也可再次点击重建"
+      onClick={onCreate}
+    >
+      <span
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="inline-flex items-center gap-1.5"
+      >
+        {icon}
+        {label}
+      </span>
+    </Button>
+  );
+}
+
+/**
  * 播放设置中的酷狗增强模式开关
  *
  * 开启前用模态框说明启动条件与本机调试端口的风险；关闭时直接停用，不影响正在运行的酷狗
@@ -117,11 +170,12 @@ export function KugouEnhancedSetting() {
   const queries = useQueryClient();
   const [open, setOpen] = useState(false);
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
-  // Switch 的变更事件来自内部隐藏的 input，拿不到点击坐标；在开关上自行记录，
-  // 让对话框与其他由 DialogTrigger 打开的对话框一样从点击处展开
+  /*
+   * Switch 的变更事件来自内部隐藏的 input，拿不到点击坐标；在开关上自行记录，
+   * 让对话框与其他由 DialogTrigger 打开的对话框一样从点击处展开
+   */
   const control = useRef<HTMLElement>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
-  const [notice, setNotice] = useState('');
 
   const status = useQuery({
     queryKey: statusKey,
@@ -129,7 +183,7 @@ export function KugouEnhancedSetting() {
     refetchInterval: 2000,
   });
 
-  // 增强模式是运行时开关：只写入该项并即时生效，不会重启服务或刷新界面
+  /* 增强模式是运行时开关：只写入该项并即时生效，不会重启服务或刷新界面 */
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => putJson('/api/kugou/enhanced', { enabled }),
     onSuccess: (_, enabled) => {
@@ -148,15 +202,25 @@ export function KugouEnhancedSetting() {
 
   const shortcut = useMutation({
     mutationFn: () => postJson<{ path: string }>('/api/kugou/enhanced/shortcut'),
-    onSuccess: ({ path }) => setNotice(`已在桌面创建快捷方式：${path}`),
   });
+
+  const { isSuccess: shortcutCreated, reset: resetShortcut } = shortcut;
+
+  useEffect(() => {
+    if (!shortcutCreated) {
+      return;
+    }
+
+    const timer = window.setTimeout(resetShortcut, 3000);
+
+    return () => window.clearTimeout(timer);
+  }, [shortcutCreated, resetShortcut]);
 
   const enabled = status.data?.enabled ?? false;
   const canLaunch = enabled && status.data !== undefined && !status.data.portOpen;
   const error = toggle.error ?? launch.error ?? shortcut.error;
 
   async function enableAndLaunch() {
-    setNotice('');
     await toggle.mutateAsync(true);
     setOpen(false);
     launch.mutate();
@@ -164,45 +228,7 @@ export function KugouEnhancedSetting() {
 
   return (
     <>
-      <SettingsRow
-        label="酷狗增强模式"
-        description={
-          <>
-            <StatusText status={status.data} />
-            {enabled ? (
-              <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {canLaunch ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-6 rounded-md px-2 text-[11px]"
-                    isLoading={launch.isPending}
-                    onClick={() => launch.mutate()}
-                  >
-                    启动酷狗
-                  </Button>
-                ) : null}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="h-6 rounded-md px-2 text-[11px]"
-                  isLoading={shortcut.isPending}
-                  title="在桌面创建以增强模式启动酷狗的快捷方式，误删后可重建"
-                  onClick={() => {
-                    setNotice('');
-                    shortcut.mutate();
-                  }}
-                >
-                  创建快捷方式
-                </Button>
-              </span>
-            ) : null}
-            {enabled && !open && notice ? (
-              <span className="mt-1 block wrap-anywhere">{notice}</span>
-            ) : null}
-          </>
-        }
-      >
+      <SettingsRow label="酷狗增强模式" description={<StatusText status={status.data} />}>
         <div className="flex items-center gap-2">
           <Switch
             ref={control}
@@ -221,7 +247,6 @@ export function KugouEnhancedSetting() {
               if (checked) {
                 toggle.reset();
                 shortcut.reset();
-                setNotice('');
                 setOrigin(pointer.current ?? centerOf(control.current));
                 setOpen(true);
               } else {
@@ -233,6 +258,27 @@ export function KugouEnhancedSetting() {
           />
         </div>
       </SettingsRow>
+      {enabled ? (
+        <div className="flex flex-wrap items-center gap-2 py-2">
+          <ShortcutButton
+            pending={shortcut.isPending}
+            success={shortcut.isSuccess}
+            onCreate={() => shortcut.mutate()}
+          />
+          {canLaunch ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              isLoading={launch.isPending}
+              onClick={() => launch.mutate()}
+            >
+              <Rocket color="#60a5fa" size={20} trigger="parent" />
+              启动酷狗
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {!open && error ? <FieldError show>{error.message}</FieldError> : null}
       <Dialog open={open} origin={origin} onOpenChange={setOpen}>
         <DialogContent>
@@ -263,7 +309,6 @@ export function KugouEnhancedSetting() {
                 酷狗会在 127.0.0.1:{status.data?.port ?? 9225}{' '}
                 开放调试端口，仅本机可访问，但本机其他程序也能借此操作已登录的酷狗页面。关闭增强模式后，需正常重启酷狗端口才会关闭。
               </p>
-              {notice ? <p className="text-foreground wrap-anywhere">{notice}</p> : null}
               <FieldError show={Boolean(toggle.error ?? shortcut.error)}>
                 {(toggle.error ?? shortcut.error)?.message}
               </FieldError>
@@ -271,22 +316,18 @@ export function KugouEnhancedSetting() {
           </DialogBody>
           <DialogFooter className="flex-wrap">
             <DialogClose render={<Button variant="outline" size="sm" />}>取消</DialogClose>
-            <Button
+            <ShortcutButton
               variant="secondary"
-              size="sm"
-              isLoading={shortcut.isPending}
-              onClick={() => {
-                setNotice('');
-                shortcut.mutate();
-              }}
-            >
-              创建快捷方式
-            </Button>
+              pending={shortcut.isPending}
+              success={shortcut.isSuccess}
+              onCreate={() => shortcut.mutate()}
+            />
             <Button
               size="sm"
               isLoading={toggle.isPending}
               onClick={() => void enableAndLaunch().catch(() => {})}
             >
+              <Rocket color="#60a5fa" size={20} trigger="parent" />
               启用并启动酷狗
             </Button>
           </DialogFooter>
