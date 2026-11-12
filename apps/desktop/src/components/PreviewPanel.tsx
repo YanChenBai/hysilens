@@ -91,7 +91,7 @@ export function PreviewPanel({ active }: { active: string }) {
           </Button>
         </div>
       </div>
-      <div className="bg-background/80 absolute right-4 bottom-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-end gap-2 rounded-xl p-2 backdrop-blur-sm">
+      <div className="bg-background/80 absolute right-4 bottom-4 z-10 flex max-w-[calc(100%-2rem)] flex-wrap items-center justify-end gap-2 rounded-xl p-1 backdrop-blur-sm">
         {hasViewport ? (
           <span className="text-muted-foreground px-2 py-1 text-xs whitespace-nowrap tabular-nums">
             建议 {viewport.width} × {viewport.height}

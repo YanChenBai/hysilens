@@ -32,6 +32,7 @@ export function CopySourceButton({ url }: { url: string }) {
       <Button
         variant="ghost"
         size="sm"
+        className="h-7 px-2"
         aria-label={copied ? '已复制 OBS 地址' : '复制 OBS 地址'}
         title={copied ? '已复制 OBS 地址' : '复制 OBS 地址'}
         onClick={copy}

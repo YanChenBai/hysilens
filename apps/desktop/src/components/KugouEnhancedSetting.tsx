@@ -124,6 +124,7 @@ function ShortcutButton({
   success,
   onCreate,
   variant = 'ghost',
+  stacked = false,
 }: {
   pending: boolean;
 
@@ -132,16 +133,19 @@ function ShortcutButton({
   onCreate: () => void;
 
   variant?: 'ghost' | 'secondary';
+
+  stacked?: boolean;
 }) {
+  const iconSize = stacked ? 24 : 20;
   let label = '创建快捷方式';
-  let icon = <ExternalLink color="#a78bfa" size={20} trigger="parent" />;
+  let icon = <ExternalLink color="#a78bfa" size={iconSize} trigger="parent" />;
 
   if (pending) {
     label = '正在创建…';
-    icon = <Spinner />;
+    icon = <Spinner className={stacked ? 'size-6' : undefined} />;
   } else if (success) {
     label = '已创建到桌面';
-    icon = <CircleCheck color="#34d399" size={20} trigger="parent" />;
+    icon = <CircleCheck color="#34d399" size={iconSize} trigger="parent" />;
   }
 
   return (
@@ -150,7 +154,7 @@ function ShortcutButton({
       size="sm"
       variant={variant}
       disabled={pending}
-      className={success ? 'text-success' : undefined}
+      className={`${stacked ? 'h-16 w-full min-w-0 px-1' : ''} ${success ? 'text-success' : ''}`}
       title="在桌面创建增强模式快捷方式；创建后可双击启动酷狗，也可再次点击重建"
       onClick={onCreate}
     >
@@ -158,7 +162,7 @@ function ShortcutButton({
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        className="inline-flex items-center gap-1.5"
+        className={`inline-flex items-center ${stacked ? 'flex-col gap-2' : 'gap-1.5'}`}
       >
         {icon}
         {label}
@@ -280,24 +284,25 @@ export function KugouEnhancedSetting() {
         </div>
       </SettingsRow>
       {enabled ? (
-        <div className="flex flex-wrap items-center gap-2 py-2">
+        <div className="border-border/50 grid grid-cols-2 items-start gap-1 border-t py-2">
           <ShortcutButton
+            stacked
             pending={shortcut.isPending}
             success={shortcut.isSuccess}
             onCreate={() => shortcut.mutate()}
           />
-          {canLaunch ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              isLoading={launch.isPending}
-              onClick={() => launch.mutate()}
-            >
-              <Rocket color="#60a5fa" size={20} trigger="parent" />
-              启动酷狗
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-16 w-full min-w-0 flex-col gap-2 px-1"
+            disabled={!canLaunch}
+            isLoading={launch.isPending}
+            onClick={() => launch.mutate()}
+          >
+            <Rocket color="#60a5fa" size={24} trigger="parent" />
+            启动酷狗
+          </Button>
         </div>
       ) : null}
       {!open && error ? <FieldError show>{error.message}</FieldError> : null}
