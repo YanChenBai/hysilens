@@ -18,7 +18,7 @@ export default defineConfig({
     tasks: {
       'check:types': { command: 'tsc --noEmit', cache: false },
       'check:native': {
-        dependsOn: ['@hysilens/desktop-ui#build:web'],
+        dependsOn: ['@hysilens/desktop#build:web'],
         command: [
           'cargo fmt --all --check',
           'cargo clippy --workspace --all-targets -- -D warnings',
@@ -26,7 +26,7 @@ export default defineConfig({
         cache: false,
       },
       'test:native': {
-        dependsOn: ['@hysilens/desktop-ui#build:web'],
+        dependsOn: ['@hysilens/desktop#build:web'],
         command: 'cargo test --workspace --all-targets',
         cache: false,
       },

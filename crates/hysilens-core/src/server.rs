@@ -150,11 +150,11 @@ pub async fn serve_on(
     match &web {
         WebRoot::Embedded => anyhow::ensure!(
             EmbeddedWeb::get("index.html").is_some(),
-            "Build the overlay before Rust: vp run @hysilens/desktop-ui#build:web"
+            "Build the overlay before Rust: vp run @hysilens/desktop#build:web"
         ),
         WebRoot::Directory(path) => anyhow::ensure!(
             path.join("index.html").is_file(),
-            "Build the overlay before Rust: vp run @hysilens/desktop-ui#build:web"
+            "Build the overlay before Rust: vp run @hysilens/desktop#build:web"
         ),
     }
 

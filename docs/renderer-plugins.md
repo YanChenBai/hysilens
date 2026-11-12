@@ -21,7 +21,7 @@ hysilens pack                              # 构建并打包为 my-lyrics-<versi
 - 配置面板按 `configSchema` 自动生成表单，修改即时推送给插件，也可直接编辑 JSON 或恢复默认值。
 - 日志记录宿主状态与插件 `report()` 上报的错误；插件代码修改后 iframe 整页刷新会自动重新连接，`hysilens.config.ts` 的修改也会同步到配置面板。
 
-仓库内的 `plugins/<名称>/` 是随应用发布的内置插件：各自的 `build` 任务构建 `dist/`，`@hysilens/desktop-ui` 的 `plugins` 任务再把它们复制到 `apps/desktop/public/plugins/<名称>/`。其他插件都是外部插件，在各自目录运行 `vp run build`，再用 `hysilens link`（开发调试）安装到用户插件目录，或用 `hysilens pack` 一步构建并打包后在应用中安装。
+仓库内的 `plugins/<名称>/` 是随应用发布的内置插件：各自的 `build` 任务构建 `dist/`，`@hysilens/desktop` 的 `plugins` 任务再把它们复制到 `apps/desktop/public/plugins/<名称>/`。其他插件都是外部插件，在各自目录运行 `vp run build`，再用 `hysilens link`（开发调试）安装到用户插件目录，或用 `hysilens pack` 一步构建并打包后在应用中安装。
 
 ## hysilens.config.ts
 

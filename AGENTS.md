@@ -37,4 +37,4 @@ release. Add a tool name to select part of the graph. For example, run
 - TypeScript 脚本通过 `vpx` 执行，任务通过 `vp run <name>` 执行。
 - 不自动启动应用、服务器或 smoke；窗口与播放器交互由用户手动验证。
 - 任务定义在各自包的 `vite.config.ts` / `package.json` 中；根目录只保留 `check:types`、`check:native`、`test:native`。
-- Rust 编译前先构建前端和插件：`vp run @hysilens/desktop-ui#build:web`。
+- Rust 编译前先构建前端和插件：`vp run @hysilens/desktop#build:web`。

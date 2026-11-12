@@ -110,7 +110,7 @@ vp run build              # 构建单文件 target/release/hysilens.exe
 
 | 包                          | 任务           | 用途                                                  |
 | --------------------------- | -------------- | ----------------------------------------------------- |
-| `@hysilens/desktop-ui`      | `dev`          | 启动 Tauri、进程内服务和前端开发环境                  |
+| `@hysilens/desktop`         | `dev`          | 启动 Tauri、进程内服务和前端开发环境                  |
 |                             | `build`        | 构建 Rust Release 可执行文件                          |
 |                             | `dev:web`      | 仅启动控制界面，API 代理到本机 38473 端口；需已有服务 |
 |                             | `build:web`    | 构建内置插件与桌面前端（Rust 编译前必需）             |
@@ -128,7 +128,7 @@ vp run build              # 构建单文件 target/release/hysilens.exe
 
 ### 发布
 
-版本由 [Changesets](https://github.com/changesets/changesets) 管理：改动后运行 `vp run changeset`，选择 `@hysilens/desktop-ui`（桌面端）和／或 `@hysilens/plugin`（npm 包）并说明变更。合入 `main` 后 Release 工作流会打开版本 PR，合并后：
+版本由 [Changesets](https://github.com/changesets/changesets) 管理：改动后运行 `vp run changeset`，选择 `@hysilens/desktop`（桌面端）和／或 `@hysilens/plugin`（npm 包）并说明变更。合入 `main` 后 Release 工作流会打开版本 PR，合并后：
 
 - `@hysilens/plugin` 发布到 npm，并创建 `@hysilens/plugin@<version>` GitHub Release；
 - 桌面端版本若尚无 `v<version>` 标签，在 Windows 上构建 `hysilens.exe`，创建 `v<version>` GitHub Release 并附带 exe 与 `SHA256SUMS.txt`。

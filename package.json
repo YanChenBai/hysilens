@@ -8,9 +8,9 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "vp run @hysilens/desktop-ui#dev",
-    "build": "vp run @hysilens/desktop-ui#build",
-    "ready": "vp run @hysilens/plugin#build && vp check && vp run check:types && vp test run && vp run @hysilens/desktop-ui#build:web && vp run check:native && vp run test:native",
+    "dev": "vp run @hysilens/desktop#dev",
+    "build": "vp run @hysilens/desktop#build",
+    "ready": "vp run @hysilens/plugin#build && vp check && vp run check:types && vp test run && vp run @hysilens/desktop#build:web && vp run check:native && vp run test:native",
     "changeset": "changeset",
     "version": "changeset version && vp fmt",
     "prepare": "vp config"
