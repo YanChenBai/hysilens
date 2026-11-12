@@ -2,6 +2,7 @@ import type { PlaybackSource } from '@hysilens/protocol';
 import {
   Button,
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
@@ -85,20 +86,23 @@ export function PlaybackDiagnostics() {
           </DialogTrigger>
           <DialogContent>
             <DialogTitle>导出播放诊断报告</DialogTitle>
-            <DialogDescription>
-              先确认采集内容，再选择保存位置。报告仅保存到本地，不会自动上传。
-            </DialogDescription>
-            <div className="mt-5 space-y-4 text-sm leading-relaxed">
-              {target.isPending ? (
-                <p role="status">正在识别诊断平台…</p>
-              ) : (
-                <DiagnosticDetails info={target.data} />
-              )}
-              <FieldError show={Boolean(target.error)}>{target.error?.message}</FieldError>
-            </div>
+            <DialogBody>
+              <DialogDescription>
+                先确认采集内容，再选择保存位置。报告仅保存到本地，不会自动上传。
+              </DialogDescription>
+              <div className="mt-5 space-y-4 text-sm leading-relaxed">
+                {target.isPending ? (
+                  <p role="status">正在识别诊断平台…</p>
+                ) : (
+                  <DiagnosticDetails info={target.data} />
+                )}
+                <FieldError show={Boolean(target.error)}>{target.error?.message}</FieldError>
+              </div>
+            </DialogBody>
             <DialogFooter>
-              <DialogClose render={<Button variant="secondary" />}>取消</DialogClose>
+              <DialogClose render={<Button variant="outline" size="sm" />}>取消</DialogClose>
               <Button
+                size="sm"
                 disabled={!target.isSuccess || target.isPending || report.isPending}
                 onClick={() => {
                   if (target.data) {

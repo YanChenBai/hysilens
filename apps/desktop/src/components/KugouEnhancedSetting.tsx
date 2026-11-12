@@ -2,6 +2,7 @@ import type { AppSettings } from '@hysilens/protocol';
 import {
   Button,
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
@@ -11,7 +12,7 @@ import {
   Switch,
 } from '@hysilens/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { getJson, postJson, putJson } from '../lib/api';
 import { SettingsRow } from './SettingsSection';
@@ -99,6 +100,15 @@ function StatusText({ status }: { status: EnhancedStatus | undefined }) {
 }
 
 /**
+ * 元素中心点，键盘打开对话框时作为展开原点
+ */
+function centerOf(element: Element | null): { x: number; y: number } | null {
+  const rect = element?.getBoundingClientRect();
+
+  return rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null;
+}
+
+/**
  * 播放设置中的酷狗增强模式开关
  *
  * 开启前用模态框说明启动条件与本机调试端口的风险；关闭时直接停用，不影响正在运行的酷狗
@@ -106,6 +116,11 @@ function StatusText({ status }: { status: EnhancedStatus | undefined }) {
 export function KugouEnhancedSetting() {
   const queries = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  // Switch 的变更事件来自内部隐藏的 input，拿不到点击坐标；在开关上自行记录，
+  // 让对话框与其他由 DialogTrigger 打开的对话框一样从点击处展开
+  const control = useRef<HTMLElement>(null);
+  const pointer = useRef<{ x: number; y: number } | null>(null);
   const [notice, setNotice] = useState('');
 
   const status = useQuery({
@@ -190,9 +205,16 @@ export function KugouEnhancedSetting() {
       >
         <div className="flex items-center gap-2">
           <Switch
+            ref={control}
             aria-label="酷狗增强模式"
             checked={enabled}
             disabled={!status.data || toggle.isPending}
+            onPointerDown={event => {
+              pointer.current = { x: event.clientX, y: event.clientY };
+            }}
+            onKeyDown={() => {
+              pointer.current = null;
+            }}
             onCheckedChange={checked => {
               launch.reset();
 
@@ -200,20 +222,22 @@ export function KugouEnhancedSetting() {
                 toggle.reset();
                 shortcut.reset();
                 setNotice('');
+                setOrigin(pointer.current ?? centerOf(control.current));
                 setOpen(true);
               } else {
                 toggle.mutate(false);
               }
+
+              pointer.current = null;
             }}
           />
         </div>
       </SettingsRow>
       {!open && error ? <FieldError show>{error.message}</FieldError> : null}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex flex-col overflow-hidden p-0">
-          <DialogTitle className="shrink-0 px-6 pt-6">启用酷狗增强模式</DialogTitle>
-          {/* 只有说明区域滚动，操作按钮常驻底部 */}
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+      <Dialog open={open} origin={origin} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogTitle>启用酷狗增强模式</DialogTitle>
+          <DialogBody>
             <DialogDescription>
               通过酷狗内嵌网页的接口读取播放进度和歌曲
               hash，读取失败时自动回退到当前方式。该接口并非酷狗公开承诺的功能，酷狗升级后可能失效。
@@ -244,9 +268,9 @@ export function KugouEnhancedSetting() {
                 {(toggle.error ?? shortcut.error)?.message}
               </FieldError>
             </div>
-          </div>
-          <DialogFooter className="mt-0 shrink-0 flex-wrap border-t px-6 py-4">
-            <DialogClose render={<Button variant="ghost" size="sm" />}>取消</DialogClose>
+          </DialogBody>
+          <DialogFooter className="flex-wrap">
+            <DialogClose render={<Button variant="outline" size="sm" />}>取消</DialogClose>
             <Button
               variant="secondary"
               size="sm"
