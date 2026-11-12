@@ -4,8 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>
-      // Paint the preview canvas before loading styles or the application bundle.
+      /* 在样式和应用代码加载前应用控制页主题与预览背景 */
       (() => {
+        if (['/control', '/settings'].includes(location.pathname)) {
+          let theme = 'dark';
+          try {
+            theme = localStorage.getItem('hysilens-next-theme') ?? 'dark';
+          } catch {
+            /* 存储不可用时保持默认深色主题 */
+          }
+          const dark =
+            theme !== 'light' &&
+            (theme !== 'system' || matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.add('control');
+          document.documentElement.classList.toggle('dark', dark);
+          return;
+        }
         const preview = new URLSearchParams(location.search).get('preview');
         const palettes = {
           dark: ['dark', '#000'],
@@ -20,10 +34,41 @@
         }
       })();
     </script>
+    <style>
+      html.control {
+        color-scheme: dark;
+        background: var(--background, #0e0e11);
+        color: var(--foreground, #f4f4f5);
+      }
+      html.control:not(.dark) {
+        color-scheme: light;
+        background: var(--background, #fafaf9);
+        color: var(--foreground, #262629);
+      }
+      html.control body {
+        margin: 0;
+        background: inherit;
+        color: inherit;
+      }
+      .control-startup {
+        display: none;
+      }
+      html.control .control-startup {
+        display: grid;
+        height: 100dvh;
+        place-items: center;
+        font:
+          14px 'Segoe UI',
+          'Microsoft YaHei',
+          sans-serif;
+      }
+    </style>
     <title>Hysilens</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="control-startup" role="status">正在加载界面…</div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

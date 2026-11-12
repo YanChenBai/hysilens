@@ -13,7 +13,13 @@ export default function App() {
 
   if (['/control', '/settings'].includes(location.pathname)) {
     return (
-      <Suspense fallback={null}>
+      <Suspense
+        fallback={
+          <div className="control-startup" role="status">
+            正在加载界面…
+          </div>
+        }
+      >
         <Control />
       </Suspense>
     );

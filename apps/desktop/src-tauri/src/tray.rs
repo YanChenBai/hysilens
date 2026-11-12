@@ -84,6 +84,7 @@ pub fn show_main(app: &AppHandle) -> tauri::Result<()> {
             .on_navigation(navigation_guard)
             .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
             .title("Hysilens")
+            .background_color(tauri::webview::Color(14, 14, 17, 255))
             .inner_size(1100., 640.)
             .min_inner_size(900., 640.)
             .build()?
