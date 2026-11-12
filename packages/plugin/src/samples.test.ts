@@ -71,4 +71,33 @@ describe('lyric samples', () => {
       ),
     ).toBe(true);
   });
+
+  it('offers repeated handoffs before the previous line and its tokens have ended', () => {
+    const lines = original('overlap');
+
+    const handoffs = lines.slice(1).map((line, index) => ({
+      previous: lines[index]!,
+      next: line,
+    }));
+
+    expect(
+      handoffs.filter(({ previous, next }) => (previous.endMs ?? 0) > next.startMs).length,
+    ).toBeGreaterThanOrEqual(5);
+    expect(
+      handoffs.some(({ previous, next }) =>
+        previous.tokens.some(token => token.endMs > next.startMs),
+      ),
+    ).toBe(true);
+    expect(
+      handoffs.some(
+        ({ previous, next }) => previous.endMs === null && next.startMs > previous.startMs,
+      ),
+    ).toBe(true);
+    expect(
+      handoffs.filter(({ previous, next }) => next.startMs - previous.startMs < 550).length,
+    ).toBeGreaterThanOrEqual(3);
+    expect(
+      handoffs.some(({ previous, next }) => next.startMs - (previous.endMs ?? 0) >= 2000),
+    ).toBe(true);
+  });
 });

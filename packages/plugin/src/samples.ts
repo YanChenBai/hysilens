@@ -340,10 +340,43 @@ const edgeCases = sample(
   ],
 );
 
+const overlappingLines = sample(
+  'overlap',
+  '切句重叠 · 密集歌词',
+  '中英混排署名、连续短句、尾字跨句与无结束时间；检查新句入场时旧句是否叠在同一位置。',
+  { title: '切句重叠排查', artist: 'Hysilens', album: '测试' },
+  [
+    { at: 1000, text: '混音：Hysilens Music Lab', durationMs: 2200, timing: 'none' },
+    { at: 2600, text: '制作：Echo @ VIP MUSIC', durationMs: 2200, timing: 'none' },
+    {
+      at: 4200,
+      text: '雾中散炊烟',
+      timing: [
+        ['雾中', 500],
+        ['散', 300],
+        ['炊烟', 1800],
+      ],
+    },
+    { at: 5300, text: '风起', durationMs: 1200 },
+    { at: 5600, text: '云散', durationMs: 1200 },
+    { at: 5900, text: '回声', durationMs: 1200 },
+    { at: 6200, text: '落墨', durationMs: 1200 },
+    {
+      at: 7600,
+      text: '旧句没有结束时间',
+      durationMs: 3000,
+      openEnded: true,
+    },
+    { at: 8800, text: '下一句已经入场', durationMs: 1600 },
+    { at: 11000, text: '留一段空档看消散', durationMs: 1800 },
+    { at: 15000, text: '最后一句缓缓收尾', durationMs: 2400 },
+  ],
+);
+
 /**
  * 所有示例，按选择器顺序排列；id 唯一并作为选择 key
  */
-export const samples: LyricSample[] = [chinese, english, japanese, edgeCases];
+export const samples: LyricSample[] = [chinese, english, japanese, edgeCases, overlappingLines];
 
 /**
  * devtools 示例选择器中的初始选中项
