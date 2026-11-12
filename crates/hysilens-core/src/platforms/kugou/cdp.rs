@@ -621,6 +621,21 @@ mod tests {
         assert!(status().connected);
     }
 
+    fn read_http_request(stream: &mut TcpStream) {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 1024];
+
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let count = stream.read(&mut chunk).unwrap();
+            assert!(count > 0, "HTTP 请求头尚未读完，连接已关闭");
+            request.extend_from_slice(&chunk[..count]);
+            assert!(request.len() <= 8192, "HTTP 请求头过大");
+        }
+    }
+
     #[test]
     fn attachment_budget_covers_all_candidate_pages() {
         use std::net::TcpListener;
@@ -629,8 +644,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
             let (mut http, _) = listener.accept().unwrap();
-            let mut request = [0u8; 1024];
-            assert!(http.read(&mut request).unwrap() > 0);
+            read_http_request(&mut http);
             let pages: Vec<_> = (0..3).map(|index| serde_json::json!({
                 "type": "page",
                 "url": "https://pc.service.kugou.com/yueku/",
@@ -671,8 +685,7 @@ mod tests {
             let port = listener.local_addr().unwrap().port();
             let server = std::thread::spawn(move || {
                 let (mut http, _) = listener.accept().unwrap();
-                let mut request = [0u8; 1024];
-                assert!(http.read(&mut request).unwrap() > 0);
+                read_http_request(&mut http);
                 let body = serde_json::json!([{
                     "type": "page",
                     "url": "https://pc.service.kugou.com/yueku/",
@@ -713,11 +726,13 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0u8; 1024];
-            assert!(stream.read(&mut request).unwrap() > 0);
+            read_http_request(&mut stream);
             stream
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]")
                 .unwrap();
+            stream.shutdown(std::net::Shutdown::Write).unwrap();
+            let mut remaining = Vec::new();
+            stream.read_to_end(&mut remaining).unwrap();
         });
 
         assert!(!endpoint_available(port).unwrap());
