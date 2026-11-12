@@ -1,4 +1,4 @@
 interface:
   display_name: 'Hysilens 插件开发'
-  short_description: '开发和调试 Hysilens 歌词插件，处理计时、切句、资源及打包验证'
-  default_prompt: '使用 $hysilens-plugin-development 开发或修复 Hysilens 歌词插件，并完成相关验证与打包。'
+  short_description: '使用 @hysilens/plugin 开发、调试和打包歌词渲染插件'
+  default_prompt: '使用 $hysilens-plugin-development，通过 @hysilens/plugin 开发或修复歌词渲染插件，完成配置、动画、兼容验证与打包。'
