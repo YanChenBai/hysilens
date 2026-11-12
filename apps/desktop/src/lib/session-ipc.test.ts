@@ -43,6 +43,41 @@ afterEach(() => {
 });
 
 describe('main-window session IPC', () => {
+  it('coalesces subscription errors and cancels every retry on final release', async () => {
+    const session = await import('./session');
+    const stop = session.acquireSession();
+    const onError = subscribe.mock.calls[0][1];
+
+    onError(new Error('first'));
+    await vi.advanceTimersByTimeAsync(500);
+    onError(new Error('second'));
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    stop();
+
+    expect(vi.getTimerCount()).toBe(0);
+    expect(release).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed subscription and releases the replacement', async () => {
+    const session = await import('./session');
+    const stop = session.acquireSession();
+
+    subscribe.mock.calls[0][1](new Error('failed'));
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(subscribe).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    stop();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
   it('aligns playback time from pushed timestamps without clock requests', async () => {
     const session = await import('./session');
     const stop = session.acquireSession();

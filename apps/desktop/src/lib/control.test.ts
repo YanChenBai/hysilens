@@ -98,6 +98,29 @@ describe('desktop control transport', () => {
     expect(bytes).toBeInstanceOf(ArrayBuffer);
     expect([...new Uint8Array(bytes)]).toEqual([80, 75, 3, 4]);
   });
+
+  it('rejects oversized archives before reading or invoking IPC', async () => {
+    const file = new Blob();
+    vi.spyOn(file, 'size', 'get').mockReturnValue(64 * 1024 * 1024 + 1);
+    const read = vi.spyOn(file, 'arrayBuffer');
+
+    await expect(installPlugin(file)).rejects.toThrow('插件包过大');
+
+    expect(read).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('allows archives at the host size limit', async () => {
+    const file = new Blob();
+    vi.spyOn(file, 'size', 'get').mockReturnValue(64 * 1024 * 1024);
+    const bytes = new ArrayBuffer(0);
+    vi.spyOn(file, 'arrayBuffer').mockResolvedValue(bytes);
+    invoke.mockResolvedValue({ id: 'example' });
+
+    await installPlugin(file);
+
+    expect(invoke).toHaveBeenCalledWith('control_install_plugin', bytes);
+  });
 });
 
 describe('desktop control subscriptions', () => {

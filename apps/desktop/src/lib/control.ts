@@ -5,6 +5,9 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type { ConfigValues, PluginCatalog, PluginConfig } from './api';
 import { getDesktopBridge } from './local-overlay';
 
+/* 与 hysilens_core::plugins::MAX_PACKAGE_BYTES 保持一致 */
+const MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
+
 /**
  * 当前诊断平台及采集说明
  */
@@ -140,6 +143,10 @@ export const control = {
  * ZIP 直接作为 Tauri 二进制 IPC 请求，不保留 HTTP 上传入口
  */
 export async function installPlugin(file: Blob): Promise<PluginManifest> {
+  if (file.size > MAX_PACKAGE_BYTES) {
+    throw new Error('插件包过大');
+  }
+
   return ipc('control_install_plugin', await file.arrayBuffer());
 }
 

@@ -216,7 +216,9 @@ function connectIpc() {
       window.clearInterval(ping);
       ipcGeneration++;
       publish({ connection: 'disconnected', error: error.message });
+      window.clearTimeout(retry);
       retry = window.setTimeout(() => {
+        retry = 0;
         releaseIpc?.();
         releaseIpc = null;
         connect();
