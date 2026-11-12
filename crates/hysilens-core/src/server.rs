@@ -108,6 +108,9 @@ struct AppState {
     >,
 
     diagnostic_export: Arc<tokio::sync::Mutex<()>>,
+
+    /// 酷狗增强模式的运行时开关，与酷狗 adapter 共享
+    kugou_enhanced: Arc<AtomicBool>,
 }
 
 /// [`serve_on`] 的启动输入
@@ -131,12 +134,13 @@ pub async fn serve_on(
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let source = options.settings.source;
+    let kugou_enhanced = Arc::new(AtomicBool::new(options.settings.kugou_cdp));
     let registrations = vec![
         crate::platforms::wesing::registration(),
         crate::platforms::qq_music::registration(options.settings.cache_dir.clone()),
         crate::platforms::kugou::registration(
             options.settings.kugou_cache_dir.clone(),
-            options.settings.kugou_cdp,
+            kugou_enhanced.clone(),
         ),
     ];
 
@@ -302,6 +306,7 @@ pub async fn serve_on(
         plugins,
         diagnostics,
         diagnostic_export: Arc::default(),
+        kugou_enhanced,
     };
 
     let router = Router::new()
@@ -309,7 +314,10 @@ pub async fn serve_on(
         .route("/api/fonts", get(system_fonts))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/dialog/directory", post(pick_directory))
-        .route("/api/kugou/enhanced", get(kugou_enhanced))
+        .route(
+            "/api/kugou/enhanced",
+            get(get_kugou_enhanced).put(put_kugou_enhanced),
+        )
         .route("/api/kugou/enhanced/launch", post(kugou_launch))
         .route("/api/kugou/enhanced/shortcut", post(kugou_shortcut))
         .route("/api/diagnostics", get(diagnostic_info))
@@ -924,7 +932,7 @@ async fn pick_directory(
 }
 
 /// 酷狗增强模式的当前状态，供设置页显示
-async fn kugou_enhanced(State(state): State<AppState>) -> Response {
+async fn get_kugou_enhanced(State(state): State<AppState>) -> Response {
     use crate::platforms::kugou::cdp;
 
     let enabled = state.settings.read().await.kugou_cdp;
@@ -949,6 +957,43 @@ async fn kugou_enhanced(State(state): State<AppState>) -> Response {
         "error": if enabled { status.error } else { None },
     }))
     .into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct EnhancedRequest {
+    enabled: bool,
+}
+
+/// 切换酷狗增强模式并持久化；只更新运行时开关，不重启服务
+async fn put_kugou_enhanced(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<EnhancedRequest>,
+) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let mut settings = state.settings.write().await;
+    let previous = settings.kugou_cdp;
+
+    settings.kugou_cdp = request.enabled;
+
+    if let Err(error) = settings.save() {
+        settings.kugou_cdp = previous;
+
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("保存设置失败: {error:#}"),
+        )
+            .into_response();
+    }
+
+    state
+        .kugou_enhanced
+        .store(request.enabled, Ordering::Relaxed);
+
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// 以增强模式启动酷狗；酷狗已以普通模式运行时返回 409，不会结束它

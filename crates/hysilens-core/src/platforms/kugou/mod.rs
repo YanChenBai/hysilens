@@ -25,6 +25,10 @@ use super::{Adapter, Descriptor, LyricsMode, Registration, Sample};
 use crate::model::{Playback, Session, Source};
 use std::{
     path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -87,8 +91,8 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
 
 /// 创建 KuGou adapter 工厂，并为 `cache` 启动后台 KRC cache 扫描器
 ///
-/// `enhanced` 为真时优先通过酷狗调试端口读取播放信息
-pub fn registration(cache: PathBuf, enhanced: bool) -> Registration {
+/// `enhanced` 为真时优先通过酷狗调试端口读取播放信息；运行中切换会在下一次采样生效
+pub fn registration(cache: PathBuf, enhanced: Arc<AtomicBool>) -> Registration {
     let diagnostic_cache = cache.clone();
 
     Registration {
@@ -122,7 +126,7 @@ pub fn registration(cache: PathBuf, enhanced: bool) -> Registration {
             }),
         },
         create: Box::new(move |context| {
-            let probe = Probe::new(context.origin, enhanced);
+            let probe = Probe::new(context.origin, enhanced.clone());
             super::qq_music::cache::spawn_for(cache, context, Source::Kugou, "krc", catalog::read);
             Box::new(probe)
         }),
@@ -137,6 +141,9 @@ pub struct Probe {
     origin: Instant,
 
     media: anyhow::Result<super::qq_music::Probe>,
+
+    /// 增强模式开关，由设置接口在运行中切换
+    enhanced: Arc<AtomicBool>,
 
     /// 开启增强模式时存在
     cdp: Option<cdp::Channel>,
@@ -172,11 +179,12 @@ impl std::fmt::Debug for Probe {
 
 impl Probe {
     /// 创建 adapter，并将 `server_ms` 的原点设为 `origin`；`enhanced` 开启增强模式
-    pub fn new(origin: Instant, enhanced: bool) -> Self {
+    pub fn new(origin: Instant, enhanced: Arc<AtomicBool>) -> Self {
         Self {
             origin,
             media: super::qq_music::Probe::new(origin),
-            cdp: enhanced.then(|| cdp::Channel::new(cdp::PORT)),
+            cdp: None,
+            enhanced,
             #[cfg(windows)]
             memory: None,
             previous: None,
@@ -206,6 +214,13 @@ impl Probe {
             .retain(|session| session.source_id.eq_ignore_ascii_case("kugou"));
 
         // 增强模式可用时优先使用它的进度与身份，并释放内存读取句柄；失败时回退到内存方案
+        // 开关在运行中切换时建立或断开通道，不需要重启服务
+        let enabled = self.enhanced.load(Ordering::Relaxed);
+
+        if enabled != self.cdp.is_some() {
+            self.cdp = enabled.then(|| cdp::Channel::new(cdp::PORT));
+        }
+
         let enhanced = self.cdp.as_mut().map(cdp::Channel::sample);
 
         // 酷狗不是从带 AppUserModelID 的快捷方式启动时，系统媒体会话可能识别不到它；
@@ -397,7 +412,7 @@ mod tests {
     #[ignore = "只读采样已经运行的酷狗并导出诊断，不会启动播放器"]
     fn inspect_running_kugou_diagnostics() {
         let origin = Instant::now();
-        let mut probe = Probe::new(origin, false);
+        let mut probe = Probe::new(origin, Arc::default());
         let mut coordinator =
             crate::coordinator::Coordinator::new("live-diagnostics".into(), vec![DESCRIPTOR]);
 
@@ -409,7 +424,7 @@ mod tests {
         }
 
         let settings = crate::config::Settings::load().unwrap();
-        let registration = registration(settings.kugou_cache_dir, false);
+        let registration = registration(settings.kugou_cache_dir, Arc::default());
         let report = (registration.diagnostics.collect)(&coordinator.state);
         let path = std::env::temp_dir().join("hysilens-kugou-live-diagnostics.json");
 
@@ -439,7 +454,7 @@ mod tests {
     #[ignore = "需要以增强模式运行的酷狗和本地 KRC 缓存"]
     fn matches_running_kugou_through_enhanced_mode() {
         let origin = Instant::now();
-        let mut probe = Probe::new(origin, true);
+        let mut probe = Probe::new(origin, Arc::new(AtomicBool::new(true)));
         let mut coordinator =
             crate::coordinator::Coordinator::new("live-enhanced".into(), vec![DESCRIPTOR]);
         let settings = crate::config::Settings::load().unwrap();

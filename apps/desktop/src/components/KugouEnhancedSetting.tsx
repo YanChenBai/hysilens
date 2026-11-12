@@ -42,27 +42,6 @@ interface EnhancedStatus {
 const statusKey = ['kugou-enhanced'];
 
 /**
- * 设置变更会重启本机服务；等服务回来并确认新状态后再继续后续请求
- */
-async function waitForEnabled(enabled: boolean): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    try {
-      const status = await getJson<EnhancedStatus>('/api/kugou/enhanced');
-
-      if (status.enabled === enabled) {
-        return;
-      }
-    } catch {
-      // 服务重启中
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 250));
-  }
-
-  throw new Error('本机服务没有及时恢复，请稍后重试');
-}
-
-/**
  * 连接指示：`ok` 已连接，`warn` 需要用户处理或已回退，`idle` 等待中；关闭时为 `null`
  */
 type Tone = 'ok' | 'warn' | 'idle' | null;
@@ -132,18 +111,14 @@ export function KugouEnhancedSetting() {
     refetchInterval: 2000,
   });
 
+  // 增强模式是运行时开关：只写入该项并即时生效，不会重启服务或刷新界面
   const toggle = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      const latest = await getJson<AppSettings>('/api/settings');
-      const next = { ...latest, kugouCdp: enabled };
-
-      await putJson('/api/settings', next);
-      await waitForEnabled(enabled);
-
-      return next;
-    },
-    onSuccess: next => {
-      queries.setQueryData(['settings'], next);
+    mutationFn: (enabled: boolean) => putJson('/api/kugou/enhanced', { enabled }),
+    onSuccess: (_, enabled) => {
+      queries.setQueryData<AppSettings>(['settings'], old =>
+        old ? { ...old, kugouCdp: enabled } : old,
+      );
+      queries.setQueryData<EnhancedStatus>(statusKey, old => (old ? { ...old, enabled } : old));
       void queries.invalidateQueries({ queryKey: statusKey });
     },
   });
@@ -171,18 +146,46 @@ export function KugouEnhancedSetting() {
 
   return (
     <>
-      <SettingsRow label="酷狗增强模式" description={<StatusText status={status.data} />}>
+      <SettingsRow
+        label="酷狗增强模式"
+        description={
+          <>
+            <StatusText status={status.data} />
+            {enabled ? (
+              <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {canLaunch ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-6 rounded-md px-2 text-[11px]"
+                    isLoading={launch.isPending}
+                    onClick={() => launch.mutate()}
+                  >
+                    启动酷狗
+                  </Button>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-6 rounded-md px-2 text-[11px]"
+                  isLoading={shortcut.isPending}
+                  title="在桌面创建以增强模式启动酷狗的快捷方式，误删后可重建"
+                  onClick={() => {
+                    setNotice('');
+                    shortcut.mutate();
+                  }}
+                >
+                  创建快捷方式
+                </Button>
+              </span>
+            ) : null}
+            {enabled && !open && notice ? (
+              <span className="mt-1 block wrap-anywhere">{notice}</span>
+            ) : null}
+          </>
+        }
+      >
         <div className="flex items-center gap-2">
-          {canLaunch ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              isLoading={launch.isPending}
-              onClick={() => launch.mutate()}
-            >
-              启动酷狗
-            </Button>
-          ) : null}
           <Switch
             aria-label="酷狗增强模式"
             checked={enabled}
