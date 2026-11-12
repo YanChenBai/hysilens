@@ -23,16 +23,16 @@ export function ColorField({ id, label, value, onChange }: Props) {
   const color = /^#[\da-f]{6}$/i.test(value) ? value : '#000000';
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <Input
         id={id}
         value={value}
-        className="pr-12 font-mono"
+        className="settings-input settings-input-with-action font-mono"
         spellCheck={false}
         autoComplete="off"
         onChange={event => onChange(event.target.value)}
       />
-      <div className="focus-within:ring-ring absolute top-1/2 right-2.5 size-6 -translate-y-1/2 overflow-hidden rounded-md border focus-within:ring-2 focus-within:ring-offset-2">
+      <div className="focus-within:ring-ring absolute top-1/2 right-2 size-5 -translate-y-1/2 overflow-hidden rounded-sm focus-within:ring-2 focus-within:ring-offset-2">
         <span className="pointer-events-none absolute inset-0" style={{ background: color }} />
         <input
           type="color"

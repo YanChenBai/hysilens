@@ -19,6 +19,7 @@ export function Choice({
   onChange,
   items,
   label,
+  inline = false,
 }: {
   value: string;
 
@@ -27,6 +28,11 @@ export function Choice({
   items: ChoiceItem[];
 
   label: string;
+
+  /**
+   * 设置行内使用紧凑触发器，文字靠左，箭头靠右
+   */
+  inline?: boolean;
 }) {
   return (
     <Select
@@ -38,12 +44,12 @@ export function Choice({
         }
       }}
     >
-      <SelectTrigger aria-label={label}>
-        <SelectValue />
+      <SelectTrigger aria-label={label} className={inline ? 'settings-select' : undefined}>
+        <SelectValue className="min-w-0 flex-1 truncate text-left" />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="settings-popup rounded-2xl p-1.5">
         {items.map(item => (
-          <SelectItem key={item.value} value={item.value}>
+          <SelectItem key={item.value} value={item.value} className="rounded-lg py-1.5">
             {item.label}
           </SelectItem>
         ))}

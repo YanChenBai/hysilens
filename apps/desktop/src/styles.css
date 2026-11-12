@@ -50,6 +50,82 @@ html.overlay.preview body {
   grid-template-rows: minmax(320px, 55dvh) minmax(540px, auto);
 }
 
+.settings-input,
+.settings-select {
+  @apply bg-background/50 h-9 rounded-xl border-0 px-3 text-left text-sm shadow-none transition-colors outline-none;
+}
+
+.control-workspace [data-slot='button'] {
+  @apply rounded-xl;
+}
+
+.settings-popup {
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 150ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.settings-popup[data-starting-style],
+.settings-popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97);
+}
+
+.settings-input-with-action {
+  padding-right: 2.25rem;
+}
+
+.settings-input:not(:disabled):hover,
+.settings-select:not(:disabled):hover,
+.settings-select[data-popup-open] {
+  @apply bg-background/80;
+}
+
+.settings-input:focus-visible,
+.settings-select:focus-visible {
+  @apply ring-ring/40 ring-2;
+}
+
+.control-tab-panels > [data-slot='tabs-content'] {
+  grid-area: 1 / 1;
+  min-height: 0;
+  animation: control-tab-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.control-tab-panels > [data-slot='tabs-content'][data-ending-style] {
+  pointer-events: none;
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes control-tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-popup {
+    transition: none;
+  }
+
+  .settings-popup[data-starting-style],
+  .settings-popup[data-ending-style] {
+    transform: none;
+  }
+
+  .control-tab-panels > [data-slot='tabs-content'] {
+    animation: none;
+  }
+}
+
 @media (min-width: 768px) {
   .control-workspace {
     height: 100%;

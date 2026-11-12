@@ -4,6 +4,7 @@ import type { AnySchemaObject } from 'ajv';
 import { Choice } from './Choice';
 import { ColorField } from './ColorField';
 import { FontPicker } from './FontPicker';
+import { SettingsRow } from './SettingsSection';
 
 interface Props {
   /**
@@ -47,6 +48,7 @@ function Control({ name, field, value, onChange }: Props) {
 
     return (
       <Choice
+        inline
         label={String(field.title ?? name)}
         value={String(current)}
         onChange={onChange}
@@ -81,6 +83,7 @@ function NumberControl({ name, field, value, onChange }: Props) {
       id={id}
       aria-describedby={field.description ? `${id}-description` : undefined}
       type="number"
+      className="settings-input w-full tabular-nums"
       min={field.minimum}
       max={field.maximum}
       step={step}
@@ -116,21 +119,53 @@ function StringControl({ name, field, value, onChange }: Props) {
     );
   }
 
-  return <Input id={id} value={String(value)} onChange={event => onChange(event.target.value)} />;
+  return (
+    <Input
+      id={id}
+      className="settings-input"
+      value={String(value)}
+      onChange={event => onChange(event.target.value)}
+    />
+  );
+}
+
+function controlWidth(type: unknown) {
+  if (type === 'boolean') {
+    return undefined;
+  }
+
+  return ['number', 'integer'].includes(String(type)) ? 'w-24 max-w-full' : 'w-40 max-w-full';
 }
 
 /**
  * 渲染一个 plugin config 属性，控件按 JSON Schema 类型与 `x-hysilens-*` 注解选择
  */
 export function ThemeField(props: Props) {
+  const { field, name } = props;
+
+  const fullWidth =
+    field.type === 'string' &&
+    !field.enum &&
+    !['color', 'font'].includes(field['x-hysilens-control']) &&
+    field.pattern !== '^#[0-9a-fA-F]{6}$';
+
+  if (!fullWidth) {
+    return (
+      <SettingsRow
+        label={String(field.title ?? name)}
+        htmlFor={field.enum ? undefined : `theme-${name}`}
+        description={field.description ? String(field.description) : undefined}
+        descriptionId={`theme-${name}-description`}
+      >
+        <div className={controlWidth(field.type)}>
+          <Control {...props} />
+        </div>
+      </SettingsRow>
+    );
+  }
+
   return (
-    <Field
-      className={
-        props.field.type === 'boolean'
-          ? 'flex-row items-center justify-between gap-4 py-2'
-          : undefined
-      }
-    >
+    <Field className="py-2">
       <Label htmlFor={`theme-${props.name}`}>{props.field.title ?? props.name}</Label>
       <Control {...props} />
       {props.field.description ? (

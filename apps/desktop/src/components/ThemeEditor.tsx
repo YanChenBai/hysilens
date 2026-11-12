@@ -2,13 +2,14 @@ import type { PluginManifest } from '@hysilens/plugin';
 import { Button, FieldError, Textarea } from '@hysilens/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AnySchemaObject } from 'ajv';
-import { Languages, Palette } from 'kubai-icons-react';
+import { Code, Languages, Palette, Sliders, Type } from 'kubai-icons-react';
 import { Save } from 'lucide-react';
 import { useState } from 'react';
 
 import { checkConfig, getJson, putJson } from '../lib/api';
 import type { PluginCatalog, PluginConfig } from '../lib/api';
 import { FooterActions } from './FooterActions';
+import { SettingsSection } from './SettingsSection';
 import { ThemeField } from './ThemeField';
 
 /**
@@ -62,8 +63,11 @@ export function ThemeEditor({
     ([name]) => name !== 'romanization' && name !== 'translation' && !sizingNames.includes(name),
   );
 
-  const themeControls = themeFields.filter(([, field]) => field.type !== 'boolean');
-  const themeSwitches = themeFields.filter(([, field]) => field.type === 'boolean');
+  const isColor = ([, field]: [string, AnySchemaObject]) =>
+    field['x-hysilens-control'] === 'color' || field.pattern === '^#[0-9a-fA-F]{6}$';
+
+  const colorFields = themeFields.filter(isColor);
+  const effectFields = themeFields.filter(field => !isColor(field));
 
   function setField(name: string, value: unknown) {
     updateDraft(JSON.stringify({ ...values, [name]: value }, null, 2));
@@ -111,7 +115,7 @@ export function ThemeEditor({
   return (
     <form
       id={`plugin-theme-${plugin.id}`}
-      className="flex min-h-0 flex-1 flex-col"
+      className="min-w-0"
       onSubmit={event => {
         event.preventDefault();
 
@@ -123,62 +127,10 @@ export function ThemeEditor({
         save.mutate(draft);
       }}
     >
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
+      <div className="space-y-7">
         {sizingFields.length ? (
-          <section className="space-y-4 border-t pt-5" aria-labelledby="plugin-sizing-heading">
-            <h3 id="plugin-sizing-heading" className="text-sm font-medium">
-              字号与缩放
-            </h3>
-            <div className="grid gap-5 sm:grid-cols-2">
-              {sizingFields.map(([name, field]) => (
-                <ThemeField
-                  key={name}
-                  name={name}
-                  field={field}
-                  value={values[name]}
-                  onChange={value => setField(name, value)}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-        {commonFields.length ? (
-          <section className="space-y-4 border-t pt-5" aria-labelledby="common-display-heading">
-            <h3 id="common-display-heading" className="flex items-center gap-2 text-sm font-medium">
-              <Languages color="#34d399" size={20} />
-              通用显示
-            </h3>
-            <div className="grid gap-4">
-              {commonFields.map(([name, field]) => (
-                <ThemeField
-                  key={name}
-                  name={name}
-                  field={field}
-                  value={values[name]}
-                  onChange={value => setField(name, value)}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-        {themeFields.length ? (
-          <section className="space-y-4 border-t pt-5" aria-labelledby="plugin-theme-heading">
-            <h3 id="plugin-theme-heading" className="flex items-center gap-2 text-sm font-medium">
-              <Palette color="#a78bfa" size={20} />
-              主题设置
-            </h3>
-            <div className="grid gap-5 sm:grid-cols-2">
-              {themeControls.map(([name, field]) => (
-                <ThemeField
-                  key={name}
-                  name={name}
-                  field={field}
-                  value={values[name]}
-                  onChange={value => setField(name, value)}
-                />
-              ))}
-            </div>
-            {themeSwitches.map(([name, field]) => (
+          <SettingsSection title="字体与缩放" icon={<Type color="#60a5fa" size={20} />}>
+            {sizingFields.map(([name, field]) => (
               <ThemeField
                 key={name}
                 name={name}
@@ -187,17 +139,60 @@ export function ThemeEditor({
                 onChange={value => setField(name, value)}
               />
             ))}
-          </section>
+          </SettingsSection>
         ) : null}
-        <details className="border-t py-3 text-sm">
-          <summary className="text-muted-foreground cursor-pointer">编辑主题 JSON</summary>
-          <Textarea
-            aria-label="主题 JSON"
-            className="mt-3 min-h-40 font-mono text-xs"
-            value={draft}
-            onChange={event => updateDraft(event.target.value)}
-          />
-        </details>
+        {commonFields.length ? (
+          <SettingsSection title="歌词显示" icon={<Languages color="#34d399" size={20} />}>
+            {commonFields.map(([name, field]) => (
+              <ThemeField
+                key={name}
+                name={name}
+                field={field}
+                value={values[name]}
+                onChange={value => setField(name, value)}
+              />
+            ))}
+          </SettingsSection>
+        ) : null}
+        {colorFields.length ? (
+          <SettingsSection title="配色" icon={<Palette color="#a78bfa" size={20} />}>
+            {colorFields.map(([name, field]) => (
+              <ThemeField
+                key={name}
+                name={name}
+                field={field}
+                value={values[name]}
+                onChange={value => setField(name, value)}
+              />
+            ))}
+          </SettingsSection>
+        ) : null}
+        {effectFields.length ? (
+          <SettingsSection title="版式与效果" icon={<Sliders color="#e9b44c" size={20} />}>
+            {effectFields.map(([name, field]) => (
+              <ThemeField
+                key={name}
+                name={name}
+                field={field}
+                value={values[name]}
+                onChange={value => setField(name, value)}
+              />
+            ))}
+          </SettingsSection>
+        ) : null}
+        <SettingsSection title="高级设置" icon={<Code color="#60a5fa" size={20} />}>
+          <details className="py-3 text-sm">
+            <summary className="text-muted-foreground cursor-pointer text-xs">
+              编辑主题 JSON
+            </summary>
+            <Textarea
+              aria-label="主题 JSON"
+              className="mt-3 min-h-40 font-mono text-xs"
+              value={draft}
+              onChange={event => updateDraft(event.target.value)}
+            />
+          </details>
+        </SettingsSection>
       </div>
       <FooterActions>
         <FieldError show={Boolean(save.error)}>{save.error?.message}</FieldError>

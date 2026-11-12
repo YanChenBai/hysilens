@@ -43,11 +43,17 @@ export function DirectoryInput({ id, label, value, onChange }: Props) {
   return (
     <div>
       <div className="flex items-center gap-2">
-        <Input id={id} value={value} onChange={event => onChange(event.target.value)} />
+        <Input
+          id={id}
+          className="settings-input min-w-0"
+          value={value}
+          onChange={event => onChange(event.target.value)}
+        />
         <Button
           type="button"
           variant="outline"
           size="icon"
+          className="size-9 shrink-0 rounded-xl"
           aria-label={`选择${label}`}
           title="选择文件夹"
           isLoading={choose.isPending}

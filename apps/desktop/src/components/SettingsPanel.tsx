@@ -1,6 +1,7 @@
 import type { AppSettings } from '@hysilens/protocol';
-import { Button, Field, FieldDescription, FieldError, Input, Label } from '@hysilens/ui';
+import { Button, Field, FieldError, Input, Label } from '@hysilens/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Folder, Settings } from 'kubai-icons-react';
 import { Check } from 'lucide-react';
 import { useState } from 'react';
 
@@ -10,6 +11,7 @@ import { DirectoryInput } from './DirectoryInput';
 import { FooterActions } from './FooterActions';
 import { KugouDiagnostics } from './KugouDiagnostics';
 import { LocalOverlayControls } from './LocalOverlayControls';
+import { SettingsRow, SettingsSection } from './SettingsSection';
 
 /**
  * 加载一次系统设置并交给可编辑表单
@@ -75,12 +77,12 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
+    <div className="flex min-w-0 flex-col">
+      <div className="space-y-7">
         <LocalOverlayControls />
         <form
           id="system-settings"
-          className="space-y-6"
+          className="space-y-7"
           onSubmit={event => {
             event.preventDefault();
 
@@ -91,39 +93,43 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             save.mutate();
           }}
         >
-          <div>
-            <h2 className="font-semibold">播放器与服务</h2>
-          </div>
-          <Field>
-            <Label htmlFor="qq-cache">QQ 音乐歌词缓存目录</Label>
-            <DirectoryInput
-              id="qq-cache"
-              label="QQ 音乐歌词缓存目录"
-              value={draft.cacheDir}
-              onChange={value => setDraft(current => ({ ...current, cacheDir: value }))}
-            />
-          </Field>
-          <Field>
-            <Label htmlFor="kugou-cache">酷狗歌词缓存目录</Label>
-            <DirectoryInput
-              id="kugou-cache"
-              label="酷狗歌词缓存目录"
-              value={draft.kugouCacheDir}
-              onChange={value => setDraft(current => ({ ...current, kugouCacheDir: value }))}
-            />
-          </Field>
-          <Field>
-            <Label htmlFor="port">本机端口</Label>
-            <Input
-              id="port"
-              type="number"
-              min={1}
-              max={65535}
-              value={draft.port}
-              onChange={event => setDraft({ ...draft, port: Number(event.target.value) })}
-            />
-            <FieldDescription>更改后，需要更新 OBS 浏览器源地址。</FieldDescription>
-          </Field>
+          <SettingsSection title="歌词缓存" icon={<Folder size={20} color="#e9b44c" />}>
+            <Field className="py-2">
+              <Label htmlFor="qq-cache">QQ 音乐</Label>
+              <DirectoryInput
+                id="qq-cache"
+                label="QQ 音乐歌词缓存目录"
+                value={draft.cacheDir}
+                onChange={value => setDraft(current => ({ ...current, cacheDir: value }))}
+              />
+            </Field>
+            <Field className="py-2">
+              <Label htmlFor="kugou-cache">酷狗音乐</Label>
+              <DirectoryInput
+                id="kugou-cache"
+                label="酷狗歌词缓存目录"
+                value={draft.kugouCacheDir}
+                onChange={value => setDraft(current => ({ ...current, kugouCacheDir: value }))}
+              />
+            </Field>
+          </SettingsSection>
+          <SettingsSection title="本机服务" icon={<Settings size={20} color="#60a5fa" />}>
+            <SettingsRow
+              label="本机端口"
+              htmlFor="port"
+              description="更改后需更新 OBS 浏览器源地址"
+            >
+              <Input
+                id="port"
+                type="number"
+                min={1}
+                max={65535}
+                className="settings-input w-24 tabular-nums"
+                value={draft.port}
+                onChange={event => setDraft({ ...draft, port: Number(event.target.value) })}
+              />
+            </SettingsRow>
+          </SettingsSection>
         </form>
         <KugouDiagnostics />
       </div>

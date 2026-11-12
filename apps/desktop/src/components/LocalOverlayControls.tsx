@@ -1,8 +1,10 @@
-import { FieldError, Label, Switch } from '@hysilens/ui';
+import { FieldError, Switch } from '@hysilens/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Monitor } from 'kubai-icons-react';
 
 import { getDesktopBridge, useDesktopBridge } from '../lib/local-overlay';
 import type { LocalOverlaySettings } from '../lib/local-overlay';
+import { SettingsRow, SettingsSection } from './SettingsSection';
 
 const queryKey = ['local-overlay'];
 
@@ -46,28 +48,25 @@ function OverlayControls({ initial }: { initial: LocalOverlaySettings }) {
   });
 
   return (
-    <section className="space-y-3" aria-labelledby="local-overlay-heading">
-      <div className="flex items-center justify-between gap-4">
-        <h2 id="local-overlay-heading" className="font-semibold">
-          本地悬浮歌词
-        </h2>
+    <SettingsSection title="本地悬浮歌词" icon={<Monitor size={20} color="#60a5fa" />}>
+      <SettingsRow label="显示悬浮歌词" htmlFor="overlay-enabled">
         <Switch
+          id="overlay-enabled"
           aria-label="显示本地悬浮歌词"
           checked={initial.enabled}
           disabled={save.isPending}
           onCheckedChange={enabled => save.mutate({ ...initial, enabled })}
         />
-      </div>
-      <div className="flex items-center justify-between gap-4">
-        <Label htmlFor="overlay-click-through">鼠标穿透</Label>
+      </SettingsRow>
+      <SettingsRow label="鼠标穿透" htmlFor="overlay-click-through">
         <Switch
           id="overlay-click-through"
           checked={initial.clickThrough}
           disabled={save.isPending}
           onCheckedChange={clickThrough => save.mutate({ ...initial, clickThrough })}
         />
-      </div>
+      </SettingsRow>
       <FieldError show={Boolean(save.error)}>{save.error ? String(save.error) : ''}</FieldError>
-    </section>
+    </SettingsSection>
   );
 }

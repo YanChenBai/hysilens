@@ -1,15 +1,15 @@
-import { FieldError } from '@hysilens/ui';
+import { Button, FieldError } from '@hysilens/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RotateCw } from 'kubai-icons-react';
+import { Package, RotateCw } from 'kubai-icons-react';
 import { useState } from 'react';
 
 import { getJson, loadConfig, rescanPlugins } from '../lib/api';
 import type { PluginCatalog, PluginConfig } from '../lib/api';
 import { sendOverlay } from '../lib/session';
 import { Choice } from './Choice';
-import { IconButton } from './IconButton';
 import { InstallPluginButton } from './InstallPluginButton';
 import { OpenPluginDirectoryButton } from './OpenPluginDirectoryButton';
+import { SettingsRow, SettingsSection } from './SettingsSection';
 import { ThemeEditor } from './ThemeEditor';
 
 /**
@@ -53,46 +53,50 @@ export function PluginPanel({ active }: { active: string }) {
   const error = switchError || (failure ? String(failure) : '');
 
   return (
-    <section className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 space-y-4 px-5 pb-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="font-semibold">歌词插件</h2>
-          </div>
-          <div className="flex items-center gap-1">
-            <InstallPluginButton
-              onInstalled={manifest => {
-                setSwitchError('');
-                setNotice(`已安装 ${manifest.name} ${manifest.version}`);
+    <section className="h-full min-h-0 space-y-7 overflow-y-auto px-5 pt-1 pb-6">
+      <SettingsSection title="歌词插件" icon={<Package size={20} color="#a78bfa" />}>
+        <SettingsRow label="当前插件">
+          <div className="w-44 max-w-full">
+            <Choice
+              inline
+              label="歌词插件"
+              value={active}
+              onChange={value => {
+                try {
+                  sendOverlay({ renderer: value });
+                  setSwitchError('');
+                } catch (error) {
+                  setSwitchError(String(error));
+                }
               }}
-              onError={message => {
-                setNotice('');
-                setSwitchError(message);
-              }}
+              items={data.plugins.map(item => ({ value: item.id, label: item.name }))}
             />
-            <OpenPluginDirectoryButton />
-            <IconButton
-              label="重新扫描插件"
-              isLoading={rescan.isPending}
-              onClick={() => rescan.mutate()}
-            >
-              <RotateCw color="#60a5fa" size={20} trigger="parent" />
-            </IconButton>
           </div>
-        </div>
-        <Choice
-          label="歌词插件"
-          value={active}
-          onChange={value => {
-            try {
-              sendOverlay({ renderer: value });
+        </SettingsRow>
+        <div className="flex flex-wrap items-center gap-2 py-2">
+          <InstallPluginButton
+            onInstalled={manifest => {
               setSwitchError('');
-            } catch (error) {
-              setSwitchError(String(error));
-            }
-          }}
-          items={data.plugins.map(item => ({ value: item.id, label: item.name }))}
-        />
+              setNotice(`已安装 ${manifest.name} ${manifest.version}`);
+            }}
+            onError={message => {
+              setNotice('');
+              setSwitchError(message);
+            }}
+          />
+          <OpenPluginDirectoryButton />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="重新扫描插件"
+            isLoading={rescan.isPending}
+            onClick={() => rescan.mutate()}
+          >
+            <RotateCw color="#60a5fa" size={20} trigger="parent" />
+            重新扫描
+          </Button>
+        </div>
         <FieldError show={Boolean(error)}>{error}</FieldError>
         {notice && !error ? (
           <p role="status" className="text-xs text-emerald-600 dark:text-emerald-400">
@@ -104,11 +108,11 @@ export function PluginPanel({ active }: { active: string }) {
             {error}
           </p>
         ))}
-      </div>
+      </SettingsSection>
       {plugin && theme.data ? (
         <ThemeEditor key={`${plugin.id}:${plugin.revision}`} plugin={plugin} initial={theme.data} />
       ) : (
-        <p className="text-muted-foreground px-5 text-sm">正在读取插件配置…</p>
+        <p className="text-muted-foreground text-sm">正在读取插件配置…</p>
       )}
     </section>
   );

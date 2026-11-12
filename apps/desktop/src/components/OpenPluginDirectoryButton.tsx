@@ -1,8 +1,6 @@
-import { FieldError } from '@hysilens/ui';
+import { Button, FieldError } from '@hysilens/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Folder } from 'kubai-icons-react';
-
-import { IconButton } from './IconButton';
 
 /**
  * 请求 host 在系统文件管理器中打开用户 plugin 目录
@@ -19,10 +17,18 @@ export function OpenPluginDirectoryButton() {
   });
 
   return (
-    <div>
-      <IconButton label="打开插件目录" isLoading={open.isPending} onClick={() => open.mutate()}>
+    <div className="min-w-0">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label="打开插件目录"
+        isLoading={open.isPending}
+        onClick={() => open.mutate()}
+      >
         <Folder color="#d4ac64" size={20} trigger="parent" />
-      </IconButton>
+        打开目录
+      </Button>
       <FieldError show={Boolean(open.error)}>{open.error?.message}</FieldError>
     </div>
   );

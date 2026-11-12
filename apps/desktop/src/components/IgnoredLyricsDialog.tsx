@@ -52,8 +52,12 @@ export function IgnoredLyricsDialog({
         }
       }}
     >
-      <DialogTrigger render={<Button variant="outline" />} disabled={disabled}>
-        设置忽略歌词片段
+      <DialogTrigger
+        render={<Button variant="secondary" size="sm" />}
+        aria-label="设置忽略歌词片段"
+        disabled={disabled}
+      >
+        设置
       </DialogTrigger>
       {mounted ? (
         <LyricSelection

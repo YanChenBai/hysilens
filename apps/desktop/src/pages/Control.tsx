@@ -20,6 +20,7 @@ import { PlaybackPanel } from '../components/PlaybackPanel';
 import { PluginPanel } from '../components/PluginPanel';
 import { PreviewPanel } from '../components/PreviewPanel';
 import { SettingsPanel } from '../components/SettingsPanel';
+import { SettingsRow, SettingsSection } from '../components/SettingsSection';
 import { useSession } from '../lib/session';
 
 /**
@@ -164,7 +165,7 @@ function Workspace() {
             aria-label="歌词配置"
           >
             <Tabs defaultValue="appearance" className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="m-4 shrink-0" aria-label="歌词设置">
+              <TabsList className="mx-5 my-4 shrink-0" aria-label="歌词设置">
                 <TabsTrigger value="appearance" className="min-w-0 flex-1 gap-1 px-2">
                   <Palette color="#a78bfa" trigger="parent" />
                   插件配置
@@ -178,22 +179,26 @@ function Workspace() {
                   系统设置
                 </TabsTrigger>
               </TabsList>
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="control-tab-panels grid min-h-0 flex-1 overflow-hidden">
                 <TabsContent value="appearance" className="mt-0 h-full">
                   <PluginPanel active={overlay.renderer} />
                 </TabsContent>
-                <TabsContent value="playback" className="mt-0 h-full overflow-y-auto px-5 pb-6">
+                <TabsContent
+                  value="playback"
+                  className="mt-0 h-full overflow-y-auto px-5 pt-1 pb-6"
+                >
                   <PlaybackPanel />
                 </TabsContent>
-                <TabsContent value="settings" className="mt-0 h-full">
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="mx-5 mb-5 flex shrink-0 items-center justify-between border-b pb-4">
-                      <span className="text-sm">
-                        界面主题{' '}
-                        <span className="text-muted-foreground ml-2 text-xs">即时生效</span>
-                      </span>
-                      <ThemePicker />
-                    </div>
+                <TabsContent
+                  value="settings"
+                  className="mt-0 h-full overflow-y-auto px-5 pt-1 pb-6"
+                >
+                  <div className="space-y-7">
+                    <SettingsSection title="外观" icon={<Palette size={20} color="#a78bfa" />}>
+                      <SettingsRow label="界面主题" description="即时生效">
+                        <ThemePicker />
+                      </SettingsRow>
+                    </SettingsSection>
                     <SettingsPanel />
                   </div>
                 </TabsContent>

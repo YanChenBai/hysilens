@@ -1,10 +1,10 @@
 import type { PluginManifest } from '@hysilens/plugin';
+import { Button } from '@hysilens/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { PackagePlus } from 'kubai-icons-react';
 import { useRef } from 'react';
 
 import { installPlugin } from '../lib/api';
-import { IconButton } from './IconButton';
 
 /**
  * 选择一个 `hysilens pack` zip 并安装到用户 plugin 目录
@@ -57,13 +57,17 @@ export function InstallPluginButton({
           }
         }}
       />
-      <IconButton
-        label="安装插件（hysilens pack 生成的 zip）"
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        title="安装 hysilens pack 生成的 zip 插件包"
         isLoading={install.isPending}
         onClick={() => input.current?.click()}
       >
         <PackagePlus color="#a78bfa" size={20} trigger="parent" />
-      </IconButton>
+        安装插件
+      </Button>
     </>
   );
 }
