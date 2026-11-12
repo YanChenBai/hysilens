@@ -31,13 +31,15 @@ HTTP 只保留 `/api/events`、`/api/plugins`、`/api/plugins/{id}/config`、`/a
 - 服务未就绪或重启期间返回明确状态，订阅在新服务就绪后恢复
 - 页面卸载或订阅替换时释放旧 channel；服务重启时更新 snapshot epoch 并刷新缓存
 - IPC 失败不静默切回 HTTP，避免重复执行删除、安装、启动或诊断操作
+- 主界面不定时调用 control command；播放状态附带发送时间戳，时钟对齐随状态推送完成
+- 酷狗增强状态由核心服务探测进程和调试端口，每两秒采样、变化才通过 channel 推送；主界面只消费缓存
 - plugin iframe、OBS 页面及歌词窗口不能取得主窗口的控制权限
 - 诊断导出保留并发保护，plugin 删除保留内置保护和链接处理
 
 ## 验证
 
 - `vp run check:types` 与 `vp run @hysilens/desktop#build:web` 通过
-- `vp test run`：103 项通过
+- `vp test run`：105 项通过
 - `cargo fmt --all --check` 与 `cargo clippy --workspace --all-targets -- -D warnings` 通过
 - `cargo test --workspace --all-targets`：143 项通过，6 项忽略
 - 全仓 `vp check` 仍被未改动的 `plugins/scroll/package.json`、`plugins/scroll/tsconfig.json` 格式问题阻挡

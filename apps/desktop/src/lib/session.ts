@@ -3,6 +3,7 @@ import { parseOverlayConfig } from '@hysilens/protocol/config';
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { isControlPage, sendControl, subscribeControl } from './control';
+import type { EnhancedStatus } from './control';
 
 export interface SessionState {
   /**
@@ -42,6 +43,7 @@ let state: SessionState = {
 export type PluginEvent =
   | { kind: 'plugins' }
   | { kind: 'pluginConfig'; id: string }
+  | { kind: 'kugou'; status: EnhancedStatus }
   | { kind: 'resync' };
 
 const listeners = new Set<() => void>();
@@ -141,7 +143,10 @@ function apply(message: ServerMessage) {
   applySnapshot(message.state);
 }
 
-function applySnapshot(next: Extract<ServerMessage, { kind: 'state' }>['state']) {
+function applySnapshot(
+  next: Extract<ServerMessage, { kind: 'state' }>['state'],
+  clockOffset = state.clockOffset,
+) {
   if (next.version !== 1) {
     throw new Error('不支持的数据协议');
   }
@@ -159,7 +164,12 @@ function applySnapshot(next: Extract<ServerMessage, { kind: 'state' }>['state'])
     document = sameSong ? (previous?.document ?? null) : null;
   }
 
-  publish({ snapshot: { ...next, document }, lastStateAt: performance.now(), error: '' });
+  publish({
+    snapshot: { ...next, document },
+    lastStateAt: performance.now(),
+    error: '',
+    clockOffset,
+  });
 }
 
 function connectIpc() {
@@ -170,18 +180,28 @@ function connectIpc() {
         window.clearInterval(ping);
         publish({ connection: event.connected ? 'connected' : 'disconnected', clockOffset: null });
 
-        if (event.connected) {
-          bestRoundTrip = Infinity;
-          const sendPing = () => send({ kind: 'clock', clientMs: performance.now() });
-          sendPing();
-          ping = window.setInterval(sendPing, 1000);
-        }
-
         return;
       }
 
       if (event.kind === 'resync') {
         emitPlugin({ kind: 'resync' });
+
+        return;
+      }
+
+      if (event.kind === 'kugou') {
+        emitPlugin(event);
+
+        return;
+      }
+
+      if (event.kind === 'state' && event.sentAtMs !== undefined) {
+        const offset = event.sentAtMs - performance.now();
+
+        const clockOffset =
+          state.clockOffset === null ? offset : Math.max(state.clockOffset, offset);
+
+        applySnapshot(event.state, clockOffset);
 
         return;
       }

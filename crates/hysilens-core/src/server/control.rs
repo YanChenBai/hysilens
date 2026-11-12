@@ -78,9 +78,6 @@ pub enum ControlRequest {
         source: Option<Source>,
     },
 
-    /// 读取酷狗增强状态
-    KugouGet,
-
     /// 更新酷狗增强开关
     KugouSet {
         /// 是否启用
@@ -152,7 +149,6 @@ impl ControlHandle {
             ControlRequest::DirectoryPick { directory } => pick_directory(directory).await,
             ControlRequest::DiagnosticsGet => diagnostic_info(state).await,
             ControlRequest::DiagnosticsExport { source } => export_diagnostics(state, source).await,
-            ControlRequest::KugouGet => get_kugou_enhanced(state).await,
             ControlRequest::KugouSet { enabled } => put_kugou_enhanced(state, enabled).await,
             ControlRequest::KugouLaunch => kugou_launch().await,
             ControlRequest::KugouShortcut => kugou_shortcut().await,
@@ -233,7 +229,36 @@ impl ControlHandle {
     ///
     /// # Errors
     /// 状态无法序列化时返回错误
-    pub async fn forward(&self, mut send: impl FnMut(Value) -> bool + Send) -> anyhow::Result<()> {
+    pub async fn forward(
+        &self,
+        send: impl Fn(Value) -> bool + Send + Sync + Clone,
+    ) -> anyhow::Result<()> {
+        tokio::select! {
+            result = self.forward_state(send.clone()) => result,
+            result = self.forward_kugou(send) => result,
+        }
+    }
+
+    async fn forward_kugou(&self, send: impl Fn(Value) -> bool + Send) -> anyhow::Result<()> {
+        let mut previous = Value::Null;
+
+        loop {
+            let status = get_kugou_enhanced(self.state.clone()).await?;
+
+            if status != previous {
+                if !send(serde_json::json!({ "kind": "kugou", "status": status })) {
+                    return Ok(());
+                }
+
+                previous = status;
+            }
+
+            /* OS 进程和调试端口由后端采样，状态变化才推送，不需要前端定时调用 IPC */
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    }
+
+    async fn forward_state(&self, send: impl Fn(Value) -> bool + Send) -> anyhow::Result<()> {
         let mut snapshots = self.state.snapshots.clone();
         let mut plugins = self.state.plugins.subscribe();
         let mut cursor = DocumentCursor::default();
@@ -242,9 +267,13 @@ impl ControlHandle {
             let snapshot = snapshots.borrow_and_update().clone();
             let include_document = cursor.observe(&snapshot);
 
-            if !send(serde_json::to_value(ServerMessage::State {
+            let mut value = serde_json::to_value(ServerMessage::State {
                 state: SnapshotUpdate::new(&snapshot, include_document),
-            })?) {
+            })?;
+            value["sentAtMs"] =
+                serde_json::json!(self.state.origin.elapsed().as_secs_f64() * 1000.0);
+
+            if !send(value) {
                 return Ok(());
             }
 
@@ -666,13 +695,14 @@ mod tests {
         let (events, mut received) = mpsc::unbounded_channel();
         let task = tokio::spawn(async move {
             control
-                .forward(|value| events.send(value).is_ok())
+                .forward_state(|value| events.send(value).is_ok())
                 .await
                 .unwrap();
         });
 
         let first = received.recv().await.unwrap();
         assert_eq!(first["state"]["epoch"], "ipc-test");
+        assert!(first["sentAtMs"].is_number());
         assert!(first["state"].get("document").is_some());
 
         snapshots.send_modify(|snapshot| Arc::make_mut(snapshot).seq += 1);
@@ -695,6 +725,7 @@ mod tests {
             serde_json::json!({ "method": "fetch", "url": "file:///secret" }),
             serde_json::json!({ "method": "pluginsRemove", "id": "x", "force": true }),
             serde_json::json!({ "method": "directoryPick", "directory": 42 }),
+            serde_json::json!({ "method": "kugouGet" }),
         ] {
             assert!(serde_json::from_value::<ControlRequest>(value).is_err());
         }

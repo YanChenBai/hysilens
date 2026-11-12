@@ -171,10 +171,9 @@ export function KugouEnhancedSetting() {
     [],
   );
 
-  const status = useQuery({
+  const status = useQuery<EnhancedStatus>({
     queryKey: statusKey,
-    queryFn: control.getKugou,
-    refetchInterval: 2000,
+    enabled: false,
   });
 
   /* 增强模式是运行时开关：只写入该项并即时生效，不会重启服务或刷新界面 */
@@ -185,13 +184,11 @@ export function KugouEnhancedSetting() {
         old ? { ...old, kugouCdp: enabled } : old,
       );
       queries.setQueryData<EnhancedStatus>(statusKey, old => (old ? { ...old, enabled } : old));
-      void queries.invalidateQueries({ queryKey: statusKey });
     },
   });
 
   const launch = useMutation({
     mutationFn: control.launchKugou,
-    onSettled: () => void queries.invalidateQueries({ queryKey: statusKey }),
   });
 
   const shortcut = useMutation({

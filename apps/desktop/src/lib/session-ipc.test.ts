@@ -1,3 +1,5 @@
+import type { Snapshot } from '@hysilens/protocol';
+import { parseOverlayConfig } from '@hysilens/protocol/config';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import type { ControlEvent } from './control';
@@ -41,6 +43,44 @@ afterEach(() => {
 });
 
 describe('main-window session IPC', () => {
+  it('aligns playback time from pushed timestamps without clock requests', async () => {
+    const session = await import('./session');
+    const stop = session.acquireSession();
+
+    const snapshot: Snapshot = {
+      overlay: parseOverlayConfig(undefined).options,
+      source: 'auto',
+      version: 1,
+      epoch: 'push-clock',
+      seq: 1,
+      generation: 0,
+      playback: { serverMs: 500, sessions: [], error: null },
+      session: null,
+      lyricsStatus: 'waiting',
+      candidates: [],
+      document: null,
+      offsetMs: 0,
+      showRomanization: true,
+      showTranslation: true,
+      cacheIssues: [],
+    };
+
+    callbacks[0]({ kind: 'connection', connected: true });
+    callbacks[0]({ kind: 'state', state: snapshot, sentAtMs: performance.now() + 500 });
+    expect(session.readSession().clockOffset).toBe(500);
+    callbacks[0]({
+      kind: 'state',
+      state: { ...snapshot, seq: 2 },
+      sentAtMs: performance.now() + 495,
+    });
+    expect(session.readSession().clockOffset).toBe(500);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    stop();
+  });
+
   it('shares one native subscription and releases it after the last user', async () => {
     const session = await import('./session');
     const first = session.acquireSession();
@@ -76,7 +116,9 @@ describe('main-window session IPC', () => {
     expect(session.readSession().connection).toBe('connected');
     expect(receivePlugin).toHaveBeenCalledWith({ kind: 'resync' });
     expect(subscribe).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(send).not.toHaveBeenCalled();
     expect(WebSocket).not.toHaveBeenCalled();
     stop();
     unsubscribe();

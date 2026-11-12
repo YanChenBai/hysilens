@@ -60,8 +60,6 @@ type Operations = {
 
   diagnosticsExport: [{ source: PlaybackSource | null }, { path: string | null }];
 
-  kugouGet: [undefined, EnhancedStatus];
-
   kugouSet: [{ enabled: boolean }, void];
 
   kugouLaunch: [undefined, { result: string }];
@@ -75,8 +73,9 @@ type Operations = {
  * IPC channel 复用 snapshot 协议，额外报告连接和缓存重同步
  */
 export type ControlEvent =
-  | ServerMessage
+  | (ServerMessage & { sentAtMs?: number })
   | { kind: 'connection'; connected: boolean }
+  | { kind: 'kugou'; status: EnhancedStatus }
   | { kind: 'resync' };
 
 /**
@@ -132,7 +131,6 @@ export const control = {
   pickDirectory: (directory: string) => request('directoryPick', { directory }),
   getDiagnostics: () => request('diagnosticsGet', undefined),
   exportDiagnostics: (source: PlaybackSource | null) => request('diagnosticsExport', { source }),
-  getKugou: () => request('kugouGet', undefined),
   setKugou: (enabled: boolean) => request('kugouSet', { enabled }),
   launchKugou: () => request('kugouLaunch', undefined),
   createKugouShortcut: () => request('kugouShortcut', undefined),
