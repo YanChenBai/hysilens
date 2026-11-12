@@ -21,6 +21,7 @@ catalog:
   fflate: ^0.8.3
   '@changesets/changelog-github': ^1.0.1
   '@changesets/cli': ^3.0.3
+  '@tauri-apps/api': ^2.12.4
 overrides:
   vite@*: 'catalog:'
 peerDependencyRules:
