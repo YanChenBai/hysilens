@@ -69,8 +69,15 @@ const V20161_LAYOUTS: &[Layout] = &[
         // 长链曾在本机读到正确值，保留以兼容短链读失败或校验失败的运行状态；
         // 不把它当作第二份独立确认，也不因一次成功就切换为永久首选
         // 异常报告中两条链都曾落到堆指针的高 32 位，读出 528/563 等假毫秒值，
-        // 即使 DLL 版本和 SHA-256 相同也会发生；两条链都必须逐次校验，均失败时放弃时长
+        // 即使 DLL 版本和 SHA-256 相同也会发生；所有链都必须逐次校验
         duration_chain: &[0x130, 0x130, 0x2a4],
+        ..V20161_LAYOUT
+    },
+    Layout {
+        // 本机切歌和完整重启后验证的兜底入口，末端为 i32 毫秒
+        // 仅在前两条链读取或校验失败时尝试，不缓存堆地址或上一首时长
+        duration_offset: 0x024363d8,
+        duration_chain: &[0x30, 0x118],
         ..V20161_LAYOUT
     },
 ];
@@ -351,9 +358,9 @@ impl Reader {
             self.layouts
         };
 
-        // 每次重新从短链开始，失败再试长链；不缓存上次时长或永久选中上次成功的链，
+        // 每次重新从短链开始，失败再按顺序尝试兜底链；不缓存上次时长或永久选中成功的链，
         // 避免切歌后沿用旧歌时长；全部失败返回 None，不能用假时长裁剪有效进度
-        // 原始数值、逐级读取错误与两条链的采样仍由按需诊断报告完整保留
+        // 原始数值、逐级读取错误与各条链的采样仍由按需诊断报告完整保留
         let duration = layouts.iter().find_map(|layout| {
             self.duration(*layout)
                 .and_then(|duration| validate_timeline(position, duration))
@@ -513,7 +520,7 @@ mod tests {
                 position_base: (&*position as *const f64 as usize)
                     - V20161_LAYOUTS[0].position_offset,
                 duration_base: (&*root as *const u64 as usize) - V20161_LAYOUTS[0].duration_offset,
-                layouts: V20161_LAYOUTS,
+                layouts: &V20161_LAYOUTS[..2],
                 layout: V20161_LAYOUTS[0],
             };
 
@@ -540,6 +547,62 @@ mod tests {
     }
 
     #[test]
+    fn uses_third_chain_without_caching_duration_or_overriding_valid_preferred_chain() {
+        use super::{Handle, OpenProcess, PROCESS_VM_READ, Reader, V20161_LAYOUTS};
+
+        let position = Box::new(21.5f64);
+        let fallback = V20161_LAYOUTS[2];
+        let root_offset = fallback.duration_offset - V20161_LAYOUTS[0].duration_offset;
+        let mut roots = vec![0u8; root_offset + 8];
+        let mut fallback_leaf = [0u8; 0x11c];
+        let mut fallback_parent = [0u8; 0x38];
+        fallback_parent[0x30..].copy_from_slice(&(fallback_leaf.as_ptr() as u64).to_le_bytes());
+        roots[root_offset..].copy_from_slice(&(fallback_parent.as_ptr() as u64).to_le_bytes());
+
+        let mut reader = Reader {
+            identity_entry: Err("test".into()),
+            // SAFETY: 所有指针均指向当前测试进程内仍存活的缓冲区，只申请读取权限
+            handle: Handle(unsafe {
+                OpenProcess(PROCESS_VM_READ, false, std::process::id()).unwrap()
+            }),
+            position_base: (&*position as *const f64 as usize) - V20161_LAYOUTS[0].position_offset,
+            duration_base: roots.as_ptr() as usize - V20161_LAYOUTS[0].duration_offset,
+            layouts: V20161_LAYOUTS,
+            layout: V20161_LAYOUTS[0],
+        };
+
+        for (raw, expected) in [
+            (308427i32, Some(308427.0)),
+            (312946, Some(312946.0)),
+            (0, None),
+            (1, None),
+            (-1, None),
+            (21400, None),
+            (86400001, None),
+            (261276, Some(261276.0)),
+        ] {
+            fallback_leaf[0x118..].copy_from_slice(&raw.to_le_bytes());
+
+            assert_eq!(reader.timeline().unwrap(), (21500.0, expected));
+        }
+
+        reader.select_layout().unwrap();
+        assert_eq!(reader.layout.duration_offset, fallback.duration_offset);
+
+        let mut short_leaf = [0u8; 0x90];
+        short_leaf[0x8c..].copy_from_slice(&210000i32.to_le_bytes());
+        let mut short_parent = [0u8; 0x110];
+        short_parent[0x108..].copy_from_slice(&(short_leaf.as_ptr() as u64).to_le_bytes());
+        roots[..8].copy_from_slice(&(short_parent.as_ptr() as u64).to_le_bytes());
+
+        assert_eq!(reader.timeline().unwrap(), (21500.0, Some(210000.0)));
+
+        short_leaf[0x8c..].copy_from_slice(&1i32.to_le_bytes());
+
+        assert_eq!(reader.timeline().unwrap(), (21500.0, Some(261276.0)));
+    }
+
+    #[test]
     fn keeps_reading_position_without_duration_but_rejects_invalid_position() {
         use super::{Handle, OpenProcess, PROCESS_VM_READ, Reader, V20161_LAYOUTS};
 
@@ -553,7 +616,7 @@ mod tests {
             }),
             position_base: (&*position as *const f64 as usize) - V20161_LAYOUTS[0].position_offset,
             duration_base: (&*root as *const u64 as usize) - V20161_LAYOUTS[0].duration_offset,
-            layouts: V20161_LAYOUTS,
+            layouts: &V20161_LAYOUTS[..2],
             layout: V20161_LAYOUTS[0],
         };
         reader.select_layout().unwrap();
