@@ -32,6 +32,8 @@ interface EnhancedStatus {
    */
   portOpen: boolean;
 
+  endpointAvailable: boolean;
+
   kugouRunning: boolean;
 
   /**
@@ -61,7 +63,11 @@ function describe(status: EnhancedStatus | undefined): { text: string; tone: Ton
     return { text: '已连接，正在使用增强模式', tone: 'ok' };
   }
 
-  if (status.portOpen) {
+  if (status.portOpen && !status.endpointAvailable) {
+    return { text: '调试端口已占用或酷狗页面不可用，请检查后重试', tone: 'warn' };
+  }
+
+  if (status.endpointAvailable) {
     return status.error
       ? { text: `暂不可用，已回退内存读取：${status.error}`, tone: 'warn' }
       : { text: '正在连接酷狗…', tone: 'idle' };
@@ -175,7 +181,15 @@ export function KugouEnhancedSetting() {
    * 让对话框与其他由 DialogTrigger 打开的对话框一样从点击处展开
    */
   const control = useRef<HTMLElement>(null);
+  const launchRequest = useRef(0);
   const pointer = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(
+    () => () => {
+      launchRequest.current += 1;
+    },
+    [],
+  );
 
   const status = useQuery({
     queryKey: statusKey,
@@ -217,11 +231,18 @@ export function KugouEnhancedSetting() {
   }, [shortcutCreated, resetShortcut]);
 
   const enabled = status.data?.enabled ?? false;
-  const canLaunch = enabled && status.data !== undefined && !status.data.portOpen;
+  const canLaunch = enabled && status.data !== undefined && !status.data.endpointAvailable;
   const error = toggle.error ?? launch.error ?? shortcut.error;
 
   async function enableAndLaunch() {
+    const request = ++launchRequest.current;
+
     await toggle.mutateAsync(true);
+
+    if (request !== launchRequest.current) {
+      return;
+    }
+
     setOpen(false);
     launch.mutate();
   }
@@ -280,7 +301,17 @@ export function KugouEnhancedSetting() {
         </div>
       ) : null}
       {!open && error ? <FieldError show>{error.message}</FieldError> : null}
-      <Dialog open={open} origin={origin} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        origin={origin}
+        onOpenChange={nextOpen => {
+          if (!nextOpen) {
+            launchRequest.current += 1;
+          }
+
+          setOpen(nextOpen);
+        }}
+      >
         <DialogContent>
           <DialogTitle>启用酷狗增强模式</DialogTitle>
           <DialogBody>

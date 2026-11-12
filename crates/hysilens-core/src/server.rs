@@ -868,6 +868,7 @@ mod diagnostic_tests {
             lyric_match: Some(LyricMatch {
                 file_hashes: vec!["audio-hash".into()],
                 preferred_lyric_id: Some("42".into()),
+                preferred_document_id: None,
                 metadata_fallback: false,
             }),
             ..Session::default()
@@ -937,13 +938,16 @@ async fn get_kugou_enhanced(State(state): State<AppState>) -> Response {
     use crate::platforms::kugou::cdp;
 
     let enabled = state.settings.read().await.kugou_cdp;
-    let (port_open, running) = tokio::task::spawn_blocking(|| {
+    let (port_open, endpoint_available, running) = tokio::task::spawn_blocking(|| {
         #[cfg(windows)]
         let running = crate::platforms::kugou::launcher::running();
         #[cfg(not(windows))]
         let running = false;
 
-        (cdp::port_open(cdp::PORT), running)
+        let port_open = cdp::port_open(cdp::PORT);
+        let endpoint_available = port_open && cdp::endpoint_available(cdp::PORT).unwrap_or(false);
+
+        (port_open, endpoint_available, running)
     })
     .await
     .unwrap_or_default();
@@ -953,6 +957,7 @@ async fn get_kugou_enhanced(State(state): State<AppState>) -> Response {
         "enabled": enabled,
         "port": cdp::PORT,
         "portOpen": port_open,
+        "endpointAvailable": endpoint_available,
         "kugouRunning": running,
         "connected": enabled && status.connected,
         "error": if enabled { status.error } else { None },

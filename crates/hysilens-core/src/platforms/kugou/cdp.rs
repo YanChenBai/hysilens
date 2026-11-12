@@ -10,7 +10,7 @@
 use anyhow::{Context, bail, ensure};
 use serde::Deserialize;
 use std::{
-    io::{Read, Write},
+    io::{self, Read, Write},
     net::{Ipv4Addr, SocketAddr, TcpStream},
     sync::Mutex,
     time::{Duration, Instant},
@@ -122,6 +122,7 @@ impl PlayInfo {
                 .cloned()
                 .collect(),
             preferred_lyric_id: None,
+            preferred_document_id: None,
             // 歌名、歌手与 hash 来自同一次 864 读取，不会与当前歌曲错位
             metadata_fallback: true,
         }
@@ -243,12 +244,8 @@ pub fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&address(port), Duration::from_millis(200)).is_ok()
 }
 
-fn http_get(port: u16, path: &str) -> anyhow::Result<String> {
-    let mut stream =
-        TcpStream::connect_timeout(&address(port), TIMEOUT).context("酷狗调试端口未开启")?;
-
-    stream.set_read_timeout(Some(TIMEOUT))?;
-    stream.set_write_timeout(Some(TIMEOUT))?;
+fn http_get(port: u16, path: &str, deadline: Instant) -> anyhow::Result<String> {
+    let mut stream = DeadlineStream::connect(port, deadline).context("酷狗调试端口未开启")?;
     write!(
         stream,
         "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
@@ -306,27 +303,107 @@ fn read_response(stream: &mut impl Read) -> anyhow::Result<String> {
         .context("酷狗页面列表编码无效")
 }
 
+/// 每次 I/O 都使用剩余预算，页面列表、握手和播放信息读取共用一个截止时间
+struct DeadlineStream {
+    stream: TcpStream,
+
+    deadline: Instant,
+}
+
+fn remaining(deadline: Instant) -> io::Result<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|duration| !duration.is_zero())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "酷狗调试端口操作超时"))
+}
+
+impl DeadlineStream {
+    fn connect(port: u16, deadline: Instant) -> io::Result<Self> {
+        let stream = TcpStream::connect_timeout(&address(port), remaining(deadline)?)?;
+        stream.set_nodelay(true)?;
+
+        Ok(Self { stream, deadline })
+    }
+}
+
+impl Read for DeadlineStream {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.stream
+            .set_read_timeout(Some(remaining(self.deadline)?))?;
+
+        self.stream.read(buffer)
+    }
+}
+
+impl Write for DeadlineStream {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.stream
+            .set_write_timeout(Some(remaining(self.deadline)?))?;
+
+        self.stream.write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        remaining(self.deadline)?;
+
+        self.stream.flush()
+    }
+}
+
+/// 检查端口是否提供酷狗页面，普通 TCP listener 不视为增强模式就绪
+///
+/// # Errors
+///
+/// 端点超时、响应格式无效或页面列表读取失败时返回错误
+pub fn endpoint_available(port: u16) -> anyhow::Result<bool> {
+    let deadline = Instant::now() + TIMEOUT;
+    let list = http_get(port, "/json/list", deadline)?;
+
+    for url in candidates(&list, port)? {
+        remaining(deadline)?;
+        let supported = Page::connect(&url, port, deadline).and_then(|mut page| {
+            page.evaluate(
+                "typeof external === 'object' && typeof external.SuperCall !== 'undefined'",
+                deadline,
+            )
+        });
+
+        if supported.is_ok_and(|value| value.as_bool() == Some(true)) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 /// 到某个酷狗页面的 DevTools 连接
 struct Page {
-    socket: WebSocket<TcpStream>,
+    socket: WebSocket<DeadlineStream>,
 
     next_id: u64,
 }
 
 impl Page {
-    fn connect(url: &str, port: u16) -> anyhow::Result<Self> {
-        let stream = TcpStream::connect_timeout(&address(port), TIMEOUT)?;
-
-        stream.set_read_timeout(Some(TIMEOUT))?;
-        stream.set_write_timeout(Some(TIMEOUT))?;
-        stream.set_nodelay(true)?;
+    fn connect(url: &str, port: u16, deadline: Instant) -> anyhow::Result<Self> {
+        let stream = DeadlineStream::connect(port, deadline)?;
 
         let (socket, _) = tungstenite::client(url, stream).context("连接酷狗页面失败")?;
 
         Ok(Self { socket, next_id: 0 })
     }
 
-    fn play_info(&mut self) -> anyhow::Result<PlayInfo> {
+    fn play_info(&mut self, deadline: Instant) -> anyhow::Result<PlayInfo> {
+        let value = self.evaluate(PLAY_INFO, deadline)?;
+
+        parse_play_info(value.as_str().context("酷狗播放信息为空")?)
+    }
+
+    fn evaluate(
+        &mut self,
+        expression: &str,
+        deadline: Instant,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.socket.get_mut().deadline = deadline;
         self.next_id += 1;
 
         let id = self.next_id;
@@ -334,7 +411,7 @@ impl Page {
             "id": id,
             "method": "Runtime.evaluate",
             "params": {
-                "expression": PLAY_INFO,
+                "expression": expression,
                 "awaitPromise": true,
                 "returnByValue": true,
                 "timeout": 1000,
@@ -344,8 +421,6 @@ impl Page {
         self.socket
             .send(Message::text(request.to_string()))
             .context("发送酷狗页面请求失败")?;
-
-        let deadline = Instant::now() + TIMEOUT;
 
         loop {
             ensure!(Instant::now() < deadline, "酷狗页面响应超时");
@@ -375,11 +450,10 @@ impl Page {
                 bail!("{message}");
             }
 
-            let value = result["result"]["value"]
-                .as_str()
-                .context("酷狗播放信息为空")?;
-
-            return parse_play_info(value);
+            return result["result"]
+                .get("value")
+                .cloned()
+                .context("酷狗页面响应为空");
         }
     }
 }
@@ -449,7 +523,7 @@ impl Channel {
 
     /// 读取一次播放信息；连接断开时最多每两秒重新选择页面
     pub fn sample(&mut self) -> anyhow::Result<PlayInfo> {
-        let result = self.read();
+        let result = self.read(Instant::now() + TIMEOUT);
 
         publish(Status {
             connected: result.is_ok(),
@@ -459,9 +533,9 @@ impl Channel {
         result
     }
 
-    fn read(&mut self) -> anyhow::Result<PlayInfo> {
+    fn read(&mut self, deadline: Instant) -> anyhow::Result<PlayInfo> {
         if let Some(page) = &mut self.page {
-            match page.play_info() {
+            match page.play_info(deadline) {
                 Ok(info) => return Ok(info),
                 Err(error) => {
                     self.page = None;
@@ -482,7 +556,7 @@ impl Channel {
 
         self.last_attempt = Some(Instant::now());
 
-        match self.attach() {
+        match self.attach(deadline) {
             Ok(info) => {
                 self.error = None;
                 Ok(info)
@@ -495,8 +569,8 @@ impl Channel {
     }
 
     /// 依次尝试每个酷狗页面，使用第一个能返回播放信息的页面
-    fn attach(&mut self) -> anyhow::Result<PlayInfo> {
-        let list = http_get(self.port, "/json/list")?;
+    fn attach(&mut self, deadline: Instant) -> anyhow::Result<PlayInfo> {
+        let list = http_get(self.port, "/json/list", deadline)?;
         let pages = candidates(&list, self.port)?;
 
         ensure!(
@@ -507,8 +581,10 @@ impl Channel {
         let mut last = None;
 
         for url in pages {
-            let attempt = Page::connect(&url, self.port).and_then(|mut page| {
-                let info = page.play_info()?;
+            remaining(deadline)?;
+
+            let attempt = Page::connect(&url, self.port, deadline).and_then(|mut page| {
+                let info = page.play_info(deadline)?;
                 Ok((page, info))
             });
 
@@ -543,6 +619,109 @@ mod tests {
         println!("{first:?}\n{second:?}");
         assert!(!first.origin_hash.is_empty());
         assert!(status().connected);
+    }
+
+    #[test]
+    fn attachment_budget_covers_all_candidate_pages() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut http, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            assert!(http.read(&mut request).unwrap() > 0);
+            let pages: Vec<_> = (0..3).map(|index| serde_json::json!({
+                "type": "page",
+                "url": "https://pc.service.kugou.com/yueku/",
+                "webSocketDebuggerUrl": format!("ws://127.0.0.1:{port}/devtools/page/{index}"),
+            })).collect();
+            let body = serde_json::to_string(&pages).unwrap();
+            write!(
+                http,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            let (stalled, _) = listener.accept().unwrap();
+
+            std::thread::sleep(Duration::from_millis(300));
+            listener.set_nonblocking(true).unwrap();
+            let retried = listener.accept().is_ok();
+            drop(stalled);
+
+            retried
+        });
+        let mut channel = Channel::new(port);
+        let start = Instant::now();
+        let result = channel.attach(start + Duration::from_millis(100));
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err());
+        assert!(elapsed < Duration::from_millis(250), "{elapsed:?}");
+        assert!(!server.join().unwrap(), "截止后仍尝试了下一个页面");
+    }
+
+    #[test]
+    fn requires_the_native_bridge_before_reporting_an_endpoint_ready() {
+        use std::net::TcpListener;
+
+        for native_bridge in [false, true] {
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut http, _) = listener.accept().unwrap();
+                let mut request = [0u8; 1024];
+                assert!(http.read(&mut request).unwrap() > 0);
+                let body = serde_json::json!([{
+                    "type": "page",
+                    "url": "https://pc.service.kugou.com/yueku/",
+                    "webSocketDebuggerUrl": format!("ws://127.0.0.1:{port}/devtools/page/test"),
+                }])
+                .to_string();
+                write!(
+                    http,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+                let (stream, _) = listener.accept().unwrap();
+                let mut socket = tungstenite::accept(stream).unwrap();
+                let request = socket.read().unwrap().into_text().unwrap();
+                let request: serde_json::Value = serde_json::from_str(&request).unwrap();
+                socket
+                    .send(Message::text(
+                        serde_json::json!({
+                            "id": request["id"],
+                            "result": { "result": { "value": native_bridge } },
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap();
+            });
+
+            assert_eq!(endpoint_available(port).unwrap(), native_bridge);
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn rejects_a_non_cdp_listener_as_an_available_endpoint() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]")
+                .unwrap();
+        });
+
+        assert!(!endpoint_available(port).unwrap());
+        server.join().unwrap();
     }
 
     #[test]

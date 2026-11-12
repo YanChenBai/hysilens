@@ -78,6 +78,7 @@ impl KugouIdentity {
             ],
             preferred_lyric_id: (self.recommend_krc_id != 0)
                 .then(|| self.recommend_krc_id.to_string()),
+            preferred_document_id: None,
             metadata_fallback: false,
         }
     }
@@ -211,13 +212,11 @@ impl Probe {
     pub fn sample(&mut self) -> Playback {
         let mut playback = match &self.media {
             Ok(probe) => probe.sample(),
-            Err(error) => {
-                return Playback {
-                    server_ms: self.origin.elapsed().as_secs_f64() * 1000.0,
-                    error: Some(error.to_string()),
-                    ..Default::default()
-                };
-            }
+            Err(error) => Playback {
+                server_ms: self.origin.elapsed().as_secs_f64() * 1000.0,
+                error: Some(error.to_string()),
+                ..Default::default()
+            },
         };
         playback
             .sessions
@@ -233,6 +232,14 @@ impl Probe {
 
         let enhanced = self.cdp.as_mut().map(cdp::Channel::sample);
 
+        self.apply_sample(playback, enhanced)
+    }
+
+    fn apply_sample(
+        &mut self,
+        mut playback: Playback,
+        enhanced: Option<anyhow::Result<cdp::PlayInfo>>,
+    ) -> Playback {
         // 酷狗不是从带 AppUserModelID 的快捷方式启动时，系统媒体会话可能识别不到它；
         // 增强模式读到播放信息时直接据此建立会话
         if playback.sessions.is_empty()
@@ -255,6 +262,13 @@ impl Probe {
         };
 
         if let Some(Ok(info)) = &enhanced {
+            playback.error = None;
+            let current = info.session();
+            session.title = current.title;
+            session.artist = current.artist;
+            session.album.clear();
+            session.error = None;
+
             if let Some(status) = info.status() {
                 session.status = status.into();
             }
@@ -275,8 +289,12 @@ impl Probe {
 
             lyric_match.preferred_lyric_id =
                 found.as_ref().and_then(|found| found.lyric_id.clone());
-            session.lyric_match = Some(lyric_match);
             self.network_document = found.and_then(|found| found.document);
+            lyric_match.preferred_document_id = self
+                .network_document
+                .as_ref()
+                .map(|document| document.id.clone());
+            session.lyric_match = Some(lyric_match);
 
             #[cfg(windows)]
             {
@@ -478,6 +496,88 @@ mod tests {
         assert_eq!(report["memoryIdentity"]["validHashAvailable"], true);
     }
 
+    fn failed_media_probe() -> Probe {
+        Probe {
+            origin: Instant::now(),
+            media: Err(anyhow::anyhow!("SMTC unavailable")),
+            enhanced: Arc::new(AtomicBool::new(true)),
+            cdp: None,
+            network: network::Lookup::default(),
+            network_document: None,
+            #[cfg(windows)]
+            memory: None,
+            previous: None,
+            last_attach: None,
+            #[cfg(windows)]
+            attach_error: None,
+        }
+    }
+
+    fn enhanced_info() -> cdp::PlayInfo {
+        cdp::PlayInfo {
+            play_status: "playing".into(),
+            filename: "Singer B - Track B".into(),
+            hash: String::new(),
+            origin_hash: String::new(),
+            mix_song_id: "42".into(),
+            position_ms: 1000.0,
+            duration_ms: Some(200000.0),
+        }
+    }
+
+    #[test]
+    fn uses_cdp_playback_despite_a_media_error() {
+        let mut probe = failed_media_probe();
+        let playback = Playback {
+            error: Some("SMTC unavailable".into()),
+            ..Default::default()
+        };
+        let sampled = probe.apply_sample(playback, Some(Ok(enhanced_info())));
+
+        assert!(sampled.error.is_none());
+        assert_eq!(sampled.sessions[0].title, "Track B");
+        assert_eq!(sampled.sessions[0].position_ms, Some(1000.0));
+    }
+
+    #[test]
+    fn replaces_stale_smtc_metadata_with_the_cdp_track() {
+        let mut probe = failed_media_probe();
+        let playback = Playback {
+            sessions: vec![Session {
+                source_id: "kugou".into(),
+                title: "Track A".into(),
+                artist: "Singer A".into(),
+                album: "Album A".into(),
+                error: Some("stale".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let sampled = probe.apply_sample(playback, Some(Ok(enhanced_info())));
+        let session = &sampled.sessions[0];
+
+        assert_eq!(
+            (session.title.as_str(), session.artist.as_str()),
+            ("Track B", "Singer B")
+        );
+        assert!(session.album.is_empty());
+        assert!(session.error.is_none());
+        assert_eq!(session.track_id.as_deref(), Some("kugou:cdp:42::"));
+    }
+
+    #[test]
+    fn retains_the_media_error_when_cdp_is_unavailable() {
+        let mut probe = failed_media_probe();
+        let playback = Playback {
+            error: Some("SMTC unavailable".into()),
+            ..Default::default()
+        };
+        let sampled = probe.apply_sample(playback, Some(Err(anyhow::anyhow!("CDP unavailable"))));
+
+        assert_eq!(sampled.error.as_deref(), Some("SMTC unavailable"));
+        assert!(sampled.sessions.is_empty());
+    }
+
     #[cfg(windows)]
     #[test]
     #[ignore = "需要以增强模式运行的酷狗和本地 KRC 缓存"]
@@ -494,18 +594,29 @@ mod tests {
             catalog::read(&settings.kugou_cache_dir).unwrap(),
         );
 
-        for _ in 0..8 {
-            let playback = probe.sample();
+        for _ in 0..48 {
+            let sample = Adapter::sample(&mut probe);
             println!(
                 "sessions={:?} error={:?}",
-                playback
+                sample
+                    .playback
                     .sessions
                     .iter()
                     .map(|session| (&session.source_id, &session.title, &session.track_id))
                     .collect::<Vec<_>>(),
-                playback.error
+                sample.playback.error
             );
-            coordinator.playback(playback);
+            coordinator.sample(
+                sample.playback,
+                vec![crate::platforms::AdapterState {
+                    descriptor: DESCRIPTOR,
+                    document: sample.document,
+                }],
+            );
+            if coordinator.state.document.is_some() {
+                break;
+            }
+
             std::thread::sleep(std::time::Duration::from_millis(250));
         }
 
@@ -530,6 +641,7 @@ mod tests {
         assert!(session.track_id.unwrap().starts_with("kugou:cdp:"));
         assert!(session.position_ms.is_some());
         assert!(cdp::status().connected);
+        assert!(document.is_some_and(|document| !document.tracks.is_empty()));
     }
 
     #[test]

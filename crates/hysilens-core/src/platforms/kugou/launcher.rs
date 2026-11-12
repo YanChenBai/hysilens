@@ -177,6 +177,11 @@ pub fn executable() -> anyhow::Result<PathBuf> {
 /// 以增强模式启动酷狗；已开启或已在普通模式运行时不做任何操作
 pub fn launch() -> anyhow::Result<Launch> {
     if cdp::port_open(cdp::PORT) {
+        ensure!(
+            cdp::endpoint_available(cdp::PORT).unwrap_or(false),
+            "调试端口 9225 已被占用或酷狗页面不可用，请检查后重试"
+        );
+
         return Ok(Launch::Ready);
     }
 

@@ -174,7 +174,7 @@ fn resolve_text(
 /// 按酷狗官方歌词搜索给出的推荐歌词 ID 匹配缓存文件名中的 ID，不要求 hash 一致
 ///
 /// 酷狗会以同一首歌其他音质或版本的 hash 命名缓存；该 ID 由当前播放 hash 查询得到，
-/// 与客户端实际使用的歌词一致；没有对应文件时返回 `None`
+/// 还需与按当前 hash 下载的歌词内容一致，避免缓存中的 ID 碰撞；没有对应文件时返回 `None`
 fn resolve_lyric_id(
     catalog: &Catalog,
     identity: &crate::model::LyricMatch,
@@ -189,17 +189,22 @@ fn resolve_lyric_id(
         .cloned()
         .collect();
 
-    let first = candidates.first()?;
-    let unique = candidates
-        .iter()
-        .all(|entry| entry.document.id == first.document.id);
+    candidates.first()?;
+    let confirmed = identity
+        .preferred_document_id
+        .as_ref()
+        .and_then(|expected| {
+            candidates
+                .iter()
+                .find(|entry| entry.document.id == *expected)
+        });
 
     Some(super::super::CatalogResolution {
-        document: unique.then(|| first.document.clone()),
-        status: if unique {
+        document: confirmed.map(|entry| entry.document.clone()),
+        status: if confirmed.is_some() {
             "matchedLyricId"
         } else {
-            "ambiguous"
+            "missing"
         },
         candidates,
     })
@@ -506,6 +511,7 @@ mod tests {
             lyric_match: Some(crate::model::LyricMatch {
                 file_hashes: vec!["11111111111111111111111111111111".into()],
                 preferred_lyric_id: Some("42".into()),
+                preferred_document_id: None,
                 metadata_fallback: false,
             }),
             ..Session::default()
@@ -698,6 +704,7 @@ mod tests {
             lyric_match: Some(crate::model::LyricMatch {
                 file_hashes: vec!["12".repeat(16), "1e1898733bb33fbee0cd6edad4ac0deb".into()],
                 preferred_lyric_id: Some("213233970".into()),
+                preferred_document_id: None,
                 metadata_fallback: false,
             }),
             ..Default::default()
@@ -784,6 +791,7 @@ mod tests {
             lyric_match: Some(crate::model::LyricMatch {
                 file_hashes: vec!["ab".repeat(16)],
                 preferred_lyric_id: None,
+                preferred_document_id: None,
                 metadata_fallback: true,
             }),
             ..Default::default()
@@ -815,6 +823,7 @@ mod tests {
             lyric_match: Some(crate::model::LyricMatch {
                 file_hashes: vec!["8ac66fdc5445e5bd8c76e979af022796".into()],
                 preferred_lyric_id: Some("713023760".into()),
+                preferred_document_id: Some("recommended".into()),
                 metadata_fallback: true,
             }),
             ..Default::default()
@@ -850,13 +859,22 @@ mod tests {
         session.lyric_match.as_mut().unwrap().metadata_fallback = false;
         assert_eq!(resolve(&catalog, &session, None).status, "missing");
 
-        // 推荐 ID 对应多份不同歌词时不猜测
+        // 推荐 ID 碰撞时，只接受与下载内容一致的本地缓存
         session.lyric_match.as_mut().unwrap().metadata_fallback = true;
         catalog.entries.push(cached(
             "谢尔西 - 你怎么舍得我难过-11111111111111111111111111111111-713023760-00000000.krc",
             "other-content",
         ));
-        assert_eq!(resolve(&catalog, &session, None).status, "ambiguous");
+        assert_eq!(
+            resolve(&catalog, &session, None).document.unwrap().id,
+            "recommended"
+        );
+
+        session.lyric_match.as_mut().unwrap().preferred_document_id = None;
+        assert!(resolve(&catalog, &session, None).document.is_none());
+
+        session.lyric_match.as_mut().unwrap().preferred_document_id = Some("unrelated".into());
+        assert!(resolve(&catalog, &session, None).document.is_none());
     }
 
     #[test]

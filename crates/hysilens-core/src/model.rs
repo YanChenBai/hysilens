@@ -81,6 +81,9 @@ pub(crate) struct LyricMatch {
     /// 平台本身推荐的歌词 id（若有）
     pub preferred_lyric_id: Option<String>,
 
+    /// 按当前播放 hash 下载的推荐歌词内容标识，用于确认跨 hash 缓存
+    pub preferred_document_id: Option<String>,
+
     /// hash 没有匹配到任何缓存时，是否允许退回按歌名与歌手匹配
     ///
     /// 只在歌名、歌手与 hash 来自同一次读取时开启：酷狗会把同一首歌其他音质或版本的歌词

@@ -4,17 +4,18 @@
 //! `accesskey` 下载 KRC；两个接口都不需要登录；只发送这三项歌曲信息，不发送账号或设备信息
 //!
 //! 推荐歌词 ID 用于精确定位本地缓存（酷狗常以其他版本的 hash 命名缓存文件）；下载的歌词
-//! 只在本地缓存全部匹配失败时使用。每首歌只在后台查询一次，结果在内存中保留最近若干首
+//! 只在本地缓存全部匹配失败时使用。查询失败后有限退避重试，结果在内存中保留最近若干首
 
 use super::lyrics;
 use crate::model::Document;
 use anyhow::{Context, ensure};
 use base64::Engine;
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use std::{
     collections::VecDeque,
+    io::Read,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const SEARCH: &str = "http://krcs.kugou.com/search";
@@ -24,6 +25,13 @@ const DOWNLOAD: &str = "http://lyrics.kugou.com/download";
 const TIMEOUT: Duration = Duration::from_secs(5);
 
 const REMEMBERED: usize = 32;
+
+const MAX_ATTEMPTS: u8 = 3;
+
+const SEARCH_LIMIT: u64 = 512 * 1024;
+
+// 4 MiB KRC 的 Base64 编码加上 JSON 包装
+const DOWNLOAD_LIMIT: u64 = 6 * 1024 * 1024;
 
 /// 一次查询的输入；三项都相同视为同一首歌
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,13 +63,46 @@ pub struct Found {
 }
 
 #[derive(Default)]
+struct Cached {
+    found: Found,
+
+    attempts: u8,
+
+    retry_at: Option<Instant>,
+}
+
+impl Cached {
+    fn begin(&mut self, now: Instant) -> bool {
+        let first = self.attempts == 0;
+        let retry = self.found.error.is_some()
+            && self.attempts < MAX_ATTEMPTS
+            && self.retry_at.is_some_and(|at| now >= at);
+
+        if !first && !retry {
+            return false;
+        }
+
+        self.attempts += 1;
+        self.found.error = None;
+        self.retry_at = None;
+
+        true
+    }
+
+    fn fail(&mut self, message: String, now: Instant) {
+        self.found.error = Some(message);
+        self.retry_at = Some(now + Duration::from_secs(2u64.pow(u32::from(self.attempts))));
+    }
+}
+
+#[derive(Default)]
 struct State {
     /// 最近查询过的歌曲，最新的在末尾
-    tracks: VecDeque<(Track, Found)>,
+    tracks: VecDeque<(Track, Cached)>,
 }
 
 impl State {
-    fn get_mut(&mut self, track: &Track) -> Option<&mut Found> {
+    fn get_mut(&mut self, track: &Track) -> Option<&mut Cached> {
         self.tracks
             .iter_mut()
             .find(|(known, _)| known == track)
@@ -88,22 +129,30 @@ impl Lookup {
             return Found::default();
         };
 
-        if let Some(found) = state.get_mut(track) {
-            return found.clone();
+        if state.get_mut(track).is_none() {
+            if state.tracks.len() >= REMEMBERED {
+                state.tracks.pop_front();
+            }
+
+            state.tracks.push_back((track.clone(), Cached::default()));
         }
 
-        if state.tracks.len() >= REMEMBERED {
-            state.tracks.pop_front();
+        let Some(cached) = state.get_mut(track) else {
+            return Found::default();
+        };
+
+        if !cached.begin(Instant::now()) {
+            return cached.found.clone();
         }
 
-        state.tracks.push_back((track.clone(), Found::default()));
+        let found = cached.found.clone();
         drop(state);
 
         let shared = self.state.clone();
         let track = track.clone();
 
         std::thread::spawn(move || {
-            let update = |change: &dyn Fn(&mut Found)| {
+            let update = |change: &dyn Fn(&mut Cached)| {
                 if let Ok(mut state) = shared.lock()
                     && let Some(found) = state.get_mut(&track)
                 {
@@ -112,20 +161,28 @@ impl Lookup {
             };
 
             let result = fetch(&track, |lyric_id| {
-                update(&|found| found.lyric_id = Some(lyric_id.to_owned()))
+                update(&|cached| cached.found.lyric_id = Some(lyric_id.to_owned()))
             });
 
             match result {
-                Ok(document) => update(&|found| found.document = Some(document.clone())),
+                Ok(document) => update(&|cached| cached.found.document = Some(document.clone())),
                 Err(error) => {
                     let message = format!("{error:#}");
-                    update(&|found| found.error = Some(message.clone()));
+                    update(&|cached| cached.fail(message.clone(), Instant::now()));
                 }
             }
         });
 
-        Found::default()
+        found
     }
+}
+
+fn read_json<T: DeserializeOwned>(reader: impl Read, limit: u64) -> anyhow::Result<T> {
+    let mut bytes = Vec::new();
+    reader.take(limit + 1).read_to_end(&mut bytes)?;
+    ensure!(bytes.len() as u64 <= limit, "酷狗歌词服务响应超过大小限制");
+
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 #[derive(Deserialize)]
@@ -193,7 +250,7 @@ fn fetch(track: &Track, on_lyric_id: impl Fn(&str)) -> anyhow::Result<Arc<Docume
         .build()?;
     let duration = track.duration_ms.to_string();
 
-    let search: SearchResponse = client
+    let response = client
         .get(SEARCH)
         .query(&[
             ("ver", "1"),
@@ -206,14 +263,14 @@ fn fetch(track: &Track, on_lyric_id: impl Fn(&str)) -> anyhow::Result<Arc<Docume
         ])
         .send()
         .context("无法连接酷狗歌词服务")?
-        .error_for_status()?
-        .json()
-        .context("酷狗歌词搜索结果无效")?;
+        .error_for_status()?;
+    let search: SearchResponse =
+        read_json(response, SEARCH_LIMIT).context("酷狗歌词搜索结果无效")?;
 
     let candidate = choose(search).context("酷狗歌词服务没有这首歌的歌词")?;
     on_lyric_id(&candidate.id);
 
-    let download: DownloadResponse = client
+    let response = client
         .get(DOWNLOAD)
         .query(&[
             ("ver", "1"),
@@ -225,9 +282,9 @@ fn fetch(track: &Track, on_lyric_id: impl Fn(&str)) -> anyhow::Result<Arc<Docume
         ])
         .send()
         .context("无法下载酷狗歌词")?
-        .error_for_status()?
-        .json()
-        .context("酷狗歌词下载结果无效")?;
+        .error_for_status()?;
+    let download: DownloadResponse =
+        read_json(response, DOWNLOAD_LIMIT).context("酷狗歌词下载结果无效")?;
 
     let filename = format!(
         "{}-{}-{}-network.krc",
@@ -242,6 +299,45 @@ fn fetch(track: &Track, on_lyric_id: impl Fn(&str)) -> anyhow::Result<Arc<Docume
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retries_failed_requests_with_backoff_and_a_limit() {
+        let mut cached = Cached::default();
+        let mut now = Instant::now();
+
+        for attempt in 1..=MAX_ATTEMPTS {
+            assert!(cached.begin(now));
+            assert!(!cached.begin(now));
+            cached.fail("timeout".into(), now);
+            assert!(!cached.begin(now));
+            now += Duration::from_secs(2u64.pow(u32::from(attempt)));
+        }
+
+        assert!(!cached.begin(now));
+        assert_eq!(cached.attempts, MAX_ATTEMPTS);
+    }
+
+    #[test]
+    fn keeps_completed_results_without_retrying() {
+        let mut cached = Cached::default();
+        let now = Instant::now();
+        assert!(cached.begin(now));
+        cached.found.lyric_id = Some("42".into());
+
+        assert!(!cached.begin(now + Duration::from_secs(60)));
+        assert_eq!(cached.found.lyric_id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn bounds_json_before_deserializing_and_stops_reading_at_the_limit() {
+        let body = br#"{"candidates":[]}"#;
+        let parsed: SearchResponse = read_json(&body[..], body.len() as u64).unwrap();
+        assert!(parsed.candidates.is_empty());
+
+        let mut oversized = std::io::Cursor::new(vec![b' '; 100]);
+        assert!(read_json::<SearchResponse>(&mut oversized, 16).is_err());
+        assert_eq!(oversized.position(), 17);
+    }
 
     #[test]
     fn chooses_proposal_and_accepts_numeric_ids() {

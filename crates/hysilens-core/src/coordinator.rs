@@ -414,6 +414,7 @@ mod tests {
                 lyric_match: Some(LyricMatch {
                     file_hashes: vec!["aa".repeat(16)],
                     preferred_lyric_id: Some(recommend_krc_id.to_string()),
+                    preferred_document_id: None,
                     metadata_fallback: false,
                 }),
                 ..Default::default()
