@@ -19,6 +19,7 @@ use windows::Win32::System::{
     },
     Threading::{IsWow64Process2, PROCESS_QUERY_INFORMATION},
 };
+use windows::core::{PCWSTR, w};
 
 const SAMPLE_COUNT: usize = 13;
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(250);

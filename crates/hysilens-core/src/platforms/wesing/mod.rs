@@ -5,6 +5,7 @@
 //! cache，因此扫描失败会得到 unavailable session，而不是过期的歌词
 
 // 内存布局和定位流程参考 WesingCap，MIT 声明见 THIRD_PARTY_NOTICES.md
+mod diagnostics;
 #[cfg(windows)]
 mod memory;
 
@@ -43,6 +44,11 @@ pub const DESCRIPTOR: super::Descriptor = super::Descriptor {
 pub fn registration() -> super::Registration {
     super::Registration {
         descriptor: DESCRIPTOR,
+        diagnostics: super::diagnostics::Diagnostics {
+            name: "全民 K 歌",
+            description: "采集全民 K 歌进程与歌词模块版本、分阶段错误、时钟与时长候选筛选、歌词向量和注音校验状态；不会导出完整歌词正文",
+            collect: Arc::new(diagnostics::report),
+        },
         create: Box::new(|context| Box::new(Probe::new(context.origin))),
     }
 }
@@ -56,6 +62,9 @@ impl super::Adapter for Probe {
 /// WeSing adapter 状态：已附加的进程，以及上次 scan 定位到的所有地址
 pub struct Probe {
     origin: Instant,
+
+    #[cfg(windows)]
+    trace: Option<diagnostics::Trace>,
 
     #[cfg(windows)]
     process: Option<memory::Process>,
@@ -114,6 +123,8 @@ impl Probe {
         Self {
             origin,
             #[cfg(windows)]
+            trace: None,
+            #[cfg(windows)]
             process: None,
             #[cfg(windows)]
             timer_candidates: vec![],
@@ -144,11 +155,24 @@ impl Probe {
     /// `unavailable` session，仅 Windows 可用；其他 target 始终报告 `unavailable`
     pub fn sample(&mut self) -> Sample {
         #[cfg(windows)]
+        let started = Instant::now();
+
+        #[cfg(windows)]
+        if let Some(trace) = &mut self.trace {
+            trace.begin();
+        }
+
+        #[cfg(windows)]
         let result = self.read();
 
         #[cfg(not(windows))]
         let result: anyhow::Result<Option<(Session, Option<Arc<Document>>)>> =
             Err(anyhow::anyhow!("WeSing requires Windows"));
+
+        #[cfg(windows)]
+        if let Some(trace) = &mut self.trace {
+            trace.finish(&result, started.elapsed());
+        }
 
         let (sessions, document) = match result {
             Ok(Some((session, document))) => (vec![session], document),
@@ -192,8 +216,10 @@ impl Probe {
             serde_json::json!({
                 "pid": self.process.as_ref().map(|process| process.pid),
                 "clockAddress": self.timer,
+                "lyricHostAddress": self.host,
                 "clockCandidates": self.timer_candidates,
-                "durationCandidates": self.duration_addresses.len()
+                "durationCandidates": self.duration_addresses.len(),
+                "trace": self.trace,
             })
         }
 
@@ -230,11 +256,19 @@ impl Probe {
         }
 
         if self.process.is_none() {
+            if let Some(trace) = &mut self.trace {
+                trace.stage = "attachProcess";
+            }
+
             let Some(pid) = memory::find_process()? else {
                 return Ok(None);
             };
 
             self.process = Some(memory::Process::open(pid)?);
+        }
+
+        if let Some(trace) = &mut self.trace {
+            trace.stage = "readWindowTitle";
         }
 
         let title = self.process.as_ref().unwrap().window_title()?;
@@ -259,7 +293,15 @@ impl Probe {
         {
             self.last_scan = Some(now);
 
+            if let Some(trace) = &mut self.trace {
+                trace.stage = "locateLyricHost";
+            }
+
             let host = locate_host(process)?;
+
+            if let Some(trace) = &mut self.trace {
+                trace.stage = "locateClockCandidates";
+            }
             let candidates = locate_timers(process)?;
 
             self.host = Some(host);
@@ -278,6 +320,11 @@ impl Probe {
                 None,
             )));
         };
+
+        if let Some(trace) = &mut self.trace {
+            trace.stage = "readOriginalLyrics";
+            trace.original_vector = diagnostics::vector_snapshot(process, host.checked_add(0x54));
+        }
 
         let lines = match read_lines(process, host) {
             Ok(lines) => lines,
@@ -301,7 +348,18 @@ impl Probe {
                 .map(Some)
                 .collect();
 
-            self.duration_addresses = process.scan(&pattern).unwrap_or_default();
+            let scanned = process.scan(&pattern);
+
+            if let Some(trace) = &mut self.trace {
+                trace.duration_scan = diagnostics::result_value(
+                    scanned
+                        .as_ref()
+                        .map(|addresses| addresses.len())
+                        .map_err(|error| format!("{error:#}")),
+                );
+            }
+
+            self.duration_addresses = scanned.unwrap_or_default();
 
             self.last_duration_scan = Some(now);
         }
@@ -309,6 +367,11 @@ impl Probe {
         // 大范围搜索结束后再采样播放位置，避免给旧位置附上新的时间锚点
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_sample).as_secs_f64();
+
+        if let Some(trace) = &mut self.trace {
+            trace.stage = "selectClock";
+            trace.clock_evaluation = diagnostics::clocks(process, &self.timer_candidates, elapsed);
+        }
 
         if self.timer.is_none() && !self.timer_candidates.is_empty() {
             let moving: Vec<_> = self
@@ -331,6 +394,11 @@ impl Probe {
         }
 
         self.last_sample = now;
+
+        if let Some(trace) = &mut self.trace {
+            trace.stage = "readClock";
+            trace.clock_decision = diagnostics::clock_decision(self.timer, &trace.clock_evaluation);
+        }
 
         let position = self.timer.map(|address| process.float(address)).transpose();
         let position = match position {
@@ -373,12 +441,19 @@ impl Probe {
         let mut warnings = Vec::new();
 
         if let Some(timer) = self.timer {
-            match timer
+            let phonetic = timer
                 .checked_add(0xe4)
                 .context("Phonetic model address overflow")
                 .and_then(|capacity_at| {
                     read_timeline(process, capacity_at - 8, capacity_at - 4, capacity_at)
-                }) {
+                });
+
+            if let Some(trace) = &mut self.trace {
+                trace.stage = "readPhoneticLyrics";
+                trace.phonetic = diagnostics::phonetic(process, timer, &tracks[0].lines, &phonetic);
+            }
+
+            match phonetic {
                 Ok(phonetic) if aligned(&tracks[0].lines, &phonetic) => {
                     if phonetic.iter().any(|line| !line.text.trim().is_empty()) {
                         tracks.push(LyricTrack {
@@ -407,6 +482,16 @@ impl Probe {
                 .max()
                 .unwrap_or(0);
 
+            if let Some(trace) = &mut self.trace {
+                trace.stage = "selectDuration";
+                trace.duration_evaluation = diagnostics::durations(
+                    process,
+                    &self.duration_addresses,
+                    position * 1000.0,
+                    lyric_end,
+                );
+            }
+
             select_duration(&candidates, position * 1000.0, lyric_end)
         } else {
             None
@@ -422,6 +507,10 @@ impl Probe {
             .any(|line| !line.text.is_empty() && line.tokens.is_empty())
         {
             warnings.push("部分歌词没有可信的逐词时间，按逐行显示。".into());
+        }
+
+        if let Some(trace) = &mut self.trace {
+            trace.stage = "verifySongUnchanged";
         }
 
         ensure!(

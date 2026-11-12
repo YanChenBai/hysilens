@@ -98,6 +98,15 @@ struct AppState {
     restart: mpsc::Sender<Settings>,
 
     plugins: Arc<PluginRegistry>,
+
+    diagnostics: Arc<
+        Vec<(
+            crate::platforms::Descriptor,
+            crate::platforms::diagnostics::Diagnostics,
+        )>,
+    >,
+
+    diagnostic_export: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// [`serve_on`] 的启动输入
@@ -152,6 +161,13 @@ pub async fn serve_on(
         .iter()
         .map(|registration| registration.descriptor)
         .collect();
+
+    let diagnostics = Arc::new(
+        registrations
+            .iter()
+            .map(|registration| (registration.descriptor, registration.diagnostics.clone()))
+            .collect(),
+    );
 
     anyhow::ensure!(
         descriptors
@@ -280,6 +296,8 @@ pub async fn serve_on(
         settings,
         restart: options.restart,
         plugins,
+        diagnostics,
+        diagnostic_export: Arc::default(),
     };
 
     let router = Router::new()
@@ -287,10 +305,8 @@ pub async fn serve_on(
         .route("/api/fonts", get(system_fonts))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/dialog/directory", post(pick_directory))
-        .route(
-            "/api/diagnostics/kugou/export",
-            post(export_kugou_diagnostics),
-        )
+        .route("/api/diagnostics", get(diagnostic_info))
+        .route("/api/diagnostics/export", post(export_diagnostics))
         .route("/api/catalog", get(get_catalog))
         .route("/api/events", get(events))
         .route("/api/plugins", get(plugin_list))
@@ -644,30 +660,113 @@ async fn system_fonts() -> Response {
     }
 }
 
-async fn export_kugou_diagnostics(State(state): State<AppState>, headers: HeaderMap) -> Response {
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticInfo {
+    source: Option<Source>,
+
+    name: &'static str,
+
+    description: &'static str,
+}
+
+async fn diagnostic_info(State(state): State<AppState>) -> Json<DiagnosticInfo> {
+    let snapshot = state.snapshots.borrow();
+    let descriptors: Vec<_> = state
+        .diagnostics
+        .iter()
+        .map(|(descriptor, _)| *descriptor)
+        .collect();
+    let target = crate::platforms::diagnostics::target(
+        snapshot.source,
+        snapshot
+            .session
+            .as_ref()
+            .map(|session| session.source_id.as_str()),
+        &descriptors,
+    );
+
+    Json(target.map_or(DiagnosticInfo {
+        source: None,
+        name: "基础诊断",
+        description: "当前未命中播放器，仅导出应用版本、平台选择、媒体会话和歌词匹配状态，帮助排查识别失败",
+    }, |index| {
+        let (descriptor, diagnostics) = &state.diagnostics[index];
+
+        DiagnosticInfo {
+            source: Some(descriptor.source),
+            name: diagnostics.name,
+            description: diagnostics.description,
+        }
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct DiagnosticRequest {
+    source: Option<Source>,
+}
+
+async fn export_diagnostics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DiagnosticRequest>,
+) -> Response {
     if !allowed_origin(&headers, state.port) {
         return StatusCode::FORBIDDEN.into_response();
     }
+
+    let target = request.source.and_then(|source| {
+        state
+            .diagnostics
+            .iter()
+            .find(|(descriptor, _)| descriptor.source == source)
+            .cloned()
+    });
+
+    if request.source.is_some() && target.is_none() {
+        return (StatusCode::BAD_REQUEST, "未知的诊断平台").into_response();
+    }
+
+    let Ok(guard) = state.diagnostic_export.clone().try_lock_owned() else {
+        return (StatusCode::CONFLICT, "已有诊断报告正在导出").into_response();
+    };
 
     #[cfg(windows)]
     {
         let snapshots = state.snapshots.clone();
         let result = tokio::task::spawn_blocking(move || -> anyhow::Result<Option<String>> {
+            let _guard = guard;
             let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            let name = target
+                .as_ref()
+                .map_or("基础诊断", |(_, diagnostics)| diagnostics.name);
+            let source = request.source.map(serde_json::to_value).transpose()?;
+            let slug = source
+                .as_ref()
+                .and_then(|source| source.as_str())
+                .unwrap_or("base");
             let Some(path) = rfd::FileDialog::new()
-                .set_title("导出酷狗诊断报告")
+                .set_title(format!("导出{name}报告"))
                 .add_filter("JSON 诊断报告", &["json"])
-                .set_file_name(format!("hysilens-kugou-{timestamp}.json"))
+                .set_file_name(format!("hysilens-{slug}-{timestamp}.json"))
                 .save_file()
             else {
                 return Ok(None);
             };
 
-            let before = diagnostic_runtime_snapshot(snapshots.borrow().as_ref());
-            let mut report = crate::platforms::kugou::diagnostic_report();
-
-            report["runtimeBefore"] = before;
-            report["runtimeAfter"] = diagnostic_runtime_snapshot(snapshots.borrow().as_ref());
+            let initial = snapshots.borrow().clone();
+            let before = diagnostic_runtime_snapshot(&initial);
+            let platform = target.map(|(_, diagnostics)| (diagnostics.collect)(&initial));
+            let report = serde_json::json!({
+                "schemaVersion": 1,
+                "hysilensVersion": env!("CARGO_PKG_VERSION"),
+                "os": std::env::consts::OS,
+                "hostArchitecture": std::env::consts::ARCH,
+                "source": request.source,
+                "platform": platform,
+                "runtimeBefore": before,
+                "runtimeAfter": diagnostic_runtime_snapshot(snapshots.borrow().as_ref()),
+            });
 
             std::fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
 
@@ -684,7 +783,11 @@ async fn export_kugou_diagnostics(State(state): State<AppState>, headers: Header
         }
     }
     #[cfg(not(windows))]
-    (StatusCode::NOT_IMPLEMENTED, "酷狗诊断报告仅支持 Windows").into_response()
+    {
+        let _ = (guard, target);
+
+        (StatusCode::NOT_IMPLEMENTED, "诊断报告导出仅支持 Windows").into_response()
+    }
 }
 
 #[cfg(windows)]
@@ -699,9 +802,53 @@ fn diagnostic_runtime_snapshot(snapshot: &Snapshot) -> serde_json::Value {
         "source": snapshot.source,
         "playback": snapshot.playback,
         "session": snapshot.session,
+        "lyricMatch": snapshot.session.as_ref().and_then(|session| session.lyric_match.as_ref()).map(|identity| serde_json::json!({
+            "fileHashes": identity.file_hashes,
+            "preferredLyricId": identity.preferred_lyric_id,
+        })),
         "lyricsStatus": snapshot.lyrics_status,
+        "candidates": snapshot.candidates,
+        "document": snapshot.document.as_ref().map(|document| serde_json::json!({
+            "id": document.id,
+            "metadata": document.metadata,
+            "warnings": document.warnings,
+        })),
         "cacheIssues": snapshot.cache_issues,
     })
+}
+
+#[cfg(all(test, windows))]
+mod diagnostic_tests {
+    use super::*;
+    use crate::model::{Document, LyricMatch, Metadata, Session};
+
+    #[test]
+    fn exports_internal_matching_evidence_and_document_summary_without_changing_wire() {
+        let mut snapshot = Coordinator::new("diagnostic-test".into(), vec![]).state;
+        snapshot.session = Some(Session {
+            lyric_match: Some(LyricMatch {
+                file_hashes: vec!["audio-hash".into()],
+                preferred_lyric_id: Some("42".into()),
+            }),
+            ..Session::default()
+        });
+        snapshot.document = Some(Arc::new(Document {
+            id: "document".into(),
+            filename: "song.qrc".into(),
+            metadata: Metadata::default(),
+            tracks: vec![],
+            warnings: vec!["translation unavailable".into()],
+        }));
+
+        let report = diagnostic_runtime_snapshot(&snapshot);
+        let wire = serde_json::to_value(&snapshot).unwrap();
+
+        assert_eq!(report["lyricMatch"]["fileHashes"][0], "audio-hash");
+        assert_eq!(report["lyricMatch"]["preferredLyricId"], "42");
+        assert_eq!(report["document"]["warnings"][0], "translation unavailable");
+        assert!(report["document"].get("tracks").is_none());
+        assert!(wire["session"].get("lyricMatch").is_none());
+    }
 }
 
 #[derive(serde::Deserialize)]

@@ -10,6 +10,7 @@
 //! 内存扫描只在存在匹配 playback session 时进行，失败后按 timer 重试，因此崩溃或重启中的
 //! 播放器不会阻塞采样；cache 中的歌词从 catalog 解析，不接触播放器进程
 
+pub mod diagnostics;
 pub mod kugou;
 pub mod qq_music;
 pub mod wesing;
@@ -113,6 +114,9 @@ pub struct Context {
 pub struct Registration {
     /// platform 的静态描述
     pub descriptor: Descriptor,
+
+    /// 按需导出的说明与采集器；耗时工作只在独立 worker 上执行
+    pub diagnostics: diagnostics::Diagnostics,
 
     /// 构建 adapter；运行在 capture thread 上，因此可以把 WinRT 对象和 process handle 之类
     /// 线程绑定的资源留在返回的 adapter 内

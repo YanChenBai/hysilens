@@ -9,8 +9,8 @@ import { getJson, putJson } from '../lib/api';
 import { getDesktopBridge } from '../lib/local-overlay';
 import { DirectoryInput } from './DirectoryInput';
 import { FooterActions } from './FooterActions';
-import { KugouDiagnostics } from './KugouDiagnostics';
 import { LocalOverlayControls } from './LocalOverlayControls';
+import { PlaybackDiagnostics } from './PlaybackDiagnostics';
 import { SettingsRow, SettingsSection } from './SettingsSection';
 
 /**
@@ -131,7 +131,7 @@ function SettingsForm({ initial }: { initial: AppSettings }) {
             </SettingsRow>
           </SettingsSection>
         </form>
-        <KugouDiagnostics />
+        <PlaybackDiagnostics />
       </div>
       <FooterActions>
         <FieldError show={Boolean(save.error)}>{save.error?.message}</FieldError>

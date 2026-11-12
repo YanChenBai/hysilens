@@ -6,19 +6,16 @@
 //! 播放地址和 pointer chain 改编自 AF Media Bar；MIT 声明见 `THIRD_PARTY_NOTICES.md`
 
 use super::identity;
+use crate::platforms::diagnostics::windows::file_version;
 use anyhow::{Context, ensure};
 use std::mem::size_of;
 use windows::Win32::{
     Foundation::{CloseHandle, HANDLE},
-    Storage::FileSystem::{
-        GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
-    },
     System::{
         Diagnostics::{Debug::ReadProcessMemory, ToolHelp::*},
         Threading::{OpenProcess, PROCESS_VM_READ},
     },
 };
-use windows::core::{PCWSTR, w};
 
 #[path = "diagnostics.rs"]
 mod diagnostics;
@@ -89,50 +86,6 @@ fn layouts(
             "酷狗模块版本尚未适配 (kgplayer.dll: {position_version:?}, kugou.dll: {duration_version:?})"
         ),
     }
-}
-
-fn file_version(path: &[u16]) -> anyhow::Result<[u16; 4]> {
-    ensure!(path.last() == Some(&0), "酷狗模块路径未以 NUL 结尾");
-
-    // SAFETY: Toolhelp 提供以 NUL 结尾的模块路径，缓冲区在整个调用期间有效
-    let length = unsafe { GetFileVersionInfoSizeW(PCWSTR(path.as_ptr()), None) };
-    ensure!(length > 0, "无法获取酷狗模块版本信息大小");
-
-    let mut buffer = vec![0u8; length as usize];
-    let mut value = std::ptr::null_mut();
-    let mut value_length = 0;
-
-    // SAFETY: buffer 分配了 API 要求的字节数，查询结果指向仍存活的 buffer
-    unsafe {
-        GetFileVersionInfoW(
-            PCWSTR(path.as_ptr()),
-            None,
-            length,
-            buffer.as_mut_ptr().cast(),
-        )?;
-        VerQueryValueW(
-            buffer.as_ptr().cast(),
-            w!("\\"),
-            &mut value,
-            &mut value_length,
-        )
-        .ok()?;
-    }
-    ensure!(
-        !value.is_null() && value_length as usize >= size_of::<VS_FIXEDFILEINFO>(),
-        "酷狗模块版本信息不完整"
-    );
-
-    // SAFETY: 已验证结果长度；read_unaligned 不要求字节缓冲区具备结构体对齐
-    let version = unsafe { value.cast::<VS_FIXEDFILEINFO>().read_unaligned() };
-    ensure!(version.dwSignature == 0xfeef04bd, "酷狗模块版本信息无效");
-
-    Ok([
-        (version.dwFileVersionMS >> 16) as u16,
-        version.dwFileVersionMS as u16,
-        (version.dwFileVersionLS >> 16) as u16,
-        version.dwFileVersionLS as u16,
-    ])
 }
 
 struct Handle(HANDLE);

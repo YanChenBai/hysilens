@@ -82,8 +82,38 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
 
 /// 创建 KuGou adapter 工厂，并为 `cache` 启动后台 KRC cache 扫描器
 pub fn registration(cache: PathBuf) -> Registration {
+    let diagnostic_cache = cache.clone();
+
     Registration {
         descriptor: DESCRIPTOR,
+        diagnostics: super::diagnostics::Diagnostics {
+            name: "酷狗音乐",
+            description: "采集酷狗进程与模块版本、文件哈希、歌曲 Hash / ID 读取结果、KRC 候选命中与拒绝原因、元数据差异、解析错误、时间轴采样和少量只读内存片段",
+            collect: std::sync::Arc::new(move |snapshot| {
+                #[cfg(windows)]
+                let mut report = diagnostic_report();
+
+                #[cfg(not(windows))]
+                let mut report = serde_json::json!({ "error": "酷狗内存诊断仅支持 Windows" });
+
+                report["cache"] = super::diagnostics::cache(&diagnostic_cache, ".krc");
+                let catalog = catalog::read(&diagnostic_cache);
+
+                report["memoryIdentity"] = catalog::diagnostic_identity(
+                    super::diagnostics::session(snapshot, DESCRIPTOR),
+                    catalog.as_ref().ok(),
+                );
+                report["matching"] = super::diagnostics::matching(
+                    snapshot,
+                    DESCRIPTOR,
+                    catalog,
+                    catalog::diagnostic_evidence,
+                );
+                report["identityProbeSummary"] = identity_probe_summary(&report);
+
+                report
+            }),
+        },
         create: Box::new(move |context| {
             let probe = Probe::new(context.origin);
             super::qq_music::cache::spawn_for(cache, context, Source::Kugou, "krc", catalog::read);
@@ -285,9 +315,83 @@ impl Adapter for Probe {
     }
 }
 
+fn identity_probe_summary(report: &serde_json::Value) -> serde_json::Value {
+    let attempts: Vec<_> = report["processes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|process| process["samples"].as_array().into_iter().flatten())
+        .filter_map(|sample| sample.get("identity"))
+        .collect();
+
+    serde_json::json!({
+        "attemptCount": attempts.len(),
+        "successCount": attempts.iter().filter(|attempt| attempt.get("value").is_some()).count(),
+        "failureCount": attempts.iter().filter(|attempt| attempt.get("error").is_some()).count(),
+        "errors": attempts.iter().filter_map(|attempt| attempt.get("error")).take(16).collect::<Vec<_>>(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "只读采样已经运行的酷狗并导出诊断，不会启动播放器"]
+    fn inspect_running_kugou_diagnostics() {
+        let origin = Instant::now();
+        let mut probe = Probe::new(origin);
+        let mut coordinator =
+            crate::coordinator::Coordinator::new("live-diagnostics".into(), vec![DESCRIPTOR]);
+
+        coordinator.state.source = Source::Kugou;
+
+        for _ in 0..4 {
+            coordinator.playback(probe.sample());
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+
+        let settings = crate::config::Settings::load().unwrap();
+        let registration = registration(settings.kugou_cache_dir);
+        let report = (registration.diagnostics.collect)(&coordinator.state);
+        let path = std::env::temp_dir().join("hysilens-kugou-live-diagnostics.json");
+
+        std::fs::write(&path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+        println!(
+            "{}",
+            serde_json::json!({
+                "path": path,
+                "memoryIdentity": report["memoryIdentity"],
+                "identityProbeSummary": report["identityProbeSummary"],
+                "automaticStatus": report["matching"]["automatic"]["status"],
+                "candidateCount": report["matching"]["automatic"]["candidateCount"],
+                "parseErrorCount": report["matching"]["parseErrorCount"],
+            })
+        );
+
+        assert!(
+            report["identityProbeSummary"]["successCount"]
+                .as_u64()
+                .is_some_and(|count| count > 0)
+        );
+        assert_eq!(report["memoryIdentity"]["validHashAvailable"], true);
+    }
+
+    #[test]
+    fn summarizes_identity_read_failures_separately_from_successes() {
+        let report = identity_probe_summary(&serde_json::json!({
+            "processes": [{ "samples": [
+                { "identity": { "value": { "mixSongId": 42 } } },
+                { "identity": { "error": "queue changed during read" } },
+            ] }],
+        }));
+
+        assert_eq!(report["attemptCount"], 2);
+        assert_eq!(report["successCount"], 1);
+        assert_eq!(report["failureCount"], 1);
+        assert_eq!(report["errors"][0], "queue changed during read");
+    }
 
     #[test]
     fn publishes_position_and_playback_rate_without_duration() {

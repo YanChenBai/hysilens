@@ -5,6 +5,7 @@
 
 pub(crate) mod cache;
 pub mod catalog;
+mod diagnostics;
 pub mod index;
 pub mod lyrics;
 mod playback;
@@ -23,8 +24,17 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
 
 /// 创建 QQ Music adapter 工厂，并为 `cache` 启动后台 QRC cache scanner
 pub fn registration(cache: PathBuf) -> Registration {
+    let diagnostic_cache = cache.clone();
+
     Registration {
         descriptor: DESCRIPTOR,
+        diagnostics: super::diagnostics::Diagnostics {
+            name: "QQ 音乐",
+            description: "采集 QQ 音乐的进程与版本、媒体会话、原始与推算时间轴、更新时间、播放速率来源，以及歌词缓存目录、QRC 解析错误、匹配候选和元数据差异",
+            collect: std::sync::Arc::new(move |snapshot| {
+                diagnostics::report(&diagnostic_cache, snapshot)
+            }),
+        },
         create: Box::new(move |context| {
             let adapter = QqMusic {
                 origin: context.origin,

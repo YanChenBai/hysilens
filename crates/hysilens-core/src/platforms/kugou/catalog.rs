@@ -149,6 +149,67 @@ fn valid_hash(hash: &str) -> bool {
         && hash.bytes().any(|byte| byte != b'0')
 }
 
+pub(crate) fn diagnostic_identity(
+    session: Option<&Session>,
+    catalog: Option<&Catalog>,
+) -> serde_json::Value {
+    let identity = session.and_then(|session| session.lyric_match.as_ref());
+    let valid =
+        identity.is_some_and(|identity| identity.file_hashes.iter().any(|hash| valid_hash(hash)));
+    let entries = catalog.map_or(&[][..], |catalog| catalog.entries.as_slice());
+    let evidence: Vec<_> = session.map_or_else(Vec::new, |session| {
+        entries
+            .iter()
+            .map(|entry| diagnostic_evidence(entry, session))
+            .collect()
+    });
+
+    serde_json::json!({
+        "sessionDetected": session.is_some(),
+        "trackId": session.and_then(|session| session.track_id.as_ref()),
+        "available": identity.is_some(),
+        "validHashAvailable": valid,
+        "fileHashes": identity.map(|identity| &identity.file_hashes),
+        "preferredLyricId": identity.and_then(|identity| identity.preferred_lyric_id.as_ref()),
+        "evidenceSource": "runtimeAtCollectionStart",
+        "selectionPolicy": if valid { "memoryHashThenPreferredLyricId" } else { "metadataThenCacheFilename" },
+        "cacheParsed": catalog.is_some(),
+        "hashMatchedEntryCount": evidence.iter().filter(|entry| entry["hashMatched"] == true).count(),
+        "eligibleRecommendedEntryCount": evidence.iter().filter(|entry| entry["recommendationEligible"] == true).count(),
+        "unrelatedRecommendedIdEntryCount": evidence.iter().filter(|entry| entry["preferredLyricIdMatched"] == true && entry["hashMatched"] == false).count(),
+    })
+}
+
+pub(crate) fn diagnostic_evidence(entry: &Entry, session: &Session) -> serde_json::Value {
+    let fields = cache_fields(&entry.filename);
+    let identity = session.lyric_match.as_ref();
+    let hash_match = fields.is_some_and(|(_, hash, _)| {
+        valid_hash(hash)
+            && identity.is_some_and(|identity| {
+                identity
+                    .file_hashes
+                    .iter()
+                    .any(|current| hash.eq_ignore_ascii_case(current))
+            })
+    });
+    let id_match = fields.is_some_and(|(_, _, id)| {
+        identity
+            .and_then(|identity| identity.preferred_lyric_id.as_ref())
+            .is_some_and(|preferred| id.to_string() == *preferred)
+    });
+
+    serde_json::json!({
+        "cacheHash": fields.map(|(_, hash, _)| hash),
+        "cacheLyricId": fields.map(|(_, _, id)| id),
+        "hashMatched": hash_match,
+        "preferredLyricIdMatched": id_match,
+        "recommendationEligible": hash_match && id_match,
+        "titleMatched": matches_title(entry, session),
+        "metadataEligible": matches(entry, session),
+        "titleOnlyEligible": matches_without_artist(entry, session),
+    })
+}
+
 fn resolve_memory(
     catalog: &Catalog,
     identity: &crate::model::LyricMatch,
@@ -368,6 +429,61 @@ mod tests {
 
     fn entry() -> Entry {
         Entry { key: "key".into(), filename: "松原みき - 真夜中のドアStay With Me (深夜门扉留在我身边)(シングルver.)-1e1898733bb33fbee0cd6edad4ac0deb-213233970-00000000.krc".into(), title: String::new(), artist: String::new(), album: String::new(), line_count: 0, document: Arc::new(Document { id: "same".into(), filename: String::new(), metadata: Metadata::default(), tracks: vec![], warnings: vec![] }) }
+    }
+
+    #[test]
+    fn diagnostic_evidence_distinguishes_hash_hits_from_unrelated_recommended_ids() {
+        let mut matched = entry();
+        matched.filename = "歌手 - 歌曲-11111111111111111111111111111111-42-00000000.krc".into();
+        let mut unrelated = matched.clone();
+        unrelated.key = "unrelated".into();
+        unrelated.filename = "歌手 - 歌曲-22222222222222222222222222222222-42-00000000.krc".into();
+        let session = Session {
+            source_id: "kugou".into(),
+            title: "歌曲".into(),
+            lyric_match: Some(crate::model::LyricMatch {
+                file_hashes: vec!["11111111111111111111111111111111".into()],
+                preferred_lyric_id: Some("42".into()),
+            }),
+            ..Session::default()
+        };
+        let catalog = Catalog {
+            entries: vec![matched.clone(), unrelated.clone()],
+            issues: vec![],
+        };
+        let report = diagnostic_identity(Some(&session), Some(&catalog));
+
+        assert_eq!(report["hashMatchedEntryCount"], 1);
+        assert_eq!(report["eligibleRecommendedEntryCount"], 1);
+        assert_eq!(report["unrelatedRecommendedIdEntryCount"], 1);
+        assert_eq!(
+            diagnostic_evidence(&matched, &session)["recommendationEligible"],
+            true
+        );
+        assert_eq!(
+            diagnostic_evidence(&unrelated, &session)["recommendationEligible"],
+            false
+        );
+        assert_eq!(
+            diagnostic_identity(Some(&Session::default()), None)["available"],
+            false
+        );
+
+        let mut snapshot = crate::coordinator::Coordinator::new("diagnostics".into(), vec![]).state;
+        snapshot.session = Some(session);
+        let report = crate::platforms::diagnostics::matching(
+            &snapshot,
+            super::super::DESCRIPTOR,
+            Ok(catalog),
+            diagnostic_evidence,
+        );
+
+        assert_eq!(report["automatic"]["status"], "matchedMemoryHash");
+        assert_eq!(report["automatic"]["relatedRejectedEntryCount"], 1);
+        assert_eq!(
+            report["automatic"]["relatedRejectedEntries"][0]["platformEvidence"]["hashMatched"],
+            false
+        );
     }
 
     #[test]
