@@ -108,6 +108,9 @@ struct AppState {
     >,
 
     diagnostic_export: Arc<tokio::sync::Mutex<()>>,
+
+    /// 酷狗增强模式的运行时开关，与酷狗 adapter 共享
+    kugou_enhanced: Arc<AtomicBool>,
 }
 
 /// [`serve_on`] 的启动输入
@@ -131,10 +134,14 @@ pub async fn serve_on(
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
     let source = options.settings.source;
+    let kugou_enhanced = Arc::new(AtomicBool::new(options.settings.kugou_cdp));
     let registrations = vec![
         crate::platforms::wesing::registration(),
         crate::platforms::qq_music::registration(options.settings.cache_dir.clone()),
-        crate::platforms::kugou::registration(options.settings.kugou_cache_dir.clone()),
+        crate::platforms::kugou::registration(
+            options.settings.kugou_cache_dir.clone(),
+            kugou_enhanced.clone(),
+        ),
     ];
 
     let web = WebRoot::Embedded;
@@ -299,6 +306,7 @@ pub async fn serve_on(
         plugins,
         diagnostics,
         diagnostic_export: Arc::default(),
+        kugou_enhanced,
     };
 
     let router = Router::new()
@@ -306,6 +314,12 @@ pub async fn serve_on(
         .route("/api/fonts", get(system_fonts))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/dialog/directory", post(pick_directory))
+        .route(
+            "/api/kugou/enhanced",
+            get(get_kugou_enhanced).put(put_kugou_enhanced),
+        )
+        .route("/api/kugou/enhanced/launch", post(kugou_launch))
+        .route("/api/kugou/enhanced/shortcut", post(kugou_shortcut))
         .route("/api/diagnostics", get(diagnostic_info))
         .route("/api/diagnostics/export", post(export_diagnostics))
         .route("/api/catalog", get(get_catalog))
@@ -854,6 +868,8 @@ mod diagnostic_tests {
             lyric_match: Some(LyricMatch {
                 file_hashes: vec!["audio-hash".into()],
                 preferred_lyric_id: Some("42".into()),
+                preferred_document_id: None,
+                metadata_fallback: false,
             }),
             ..Session::default()
         });
@@ -914,6 +930,127 @@ async fn pick_directory(
     {
         let _ = request.directory;
         (StatusCode::NOT_IMPLEMENTED, "当前平台不支持文件夹选择").into_response()
+    }
+}
+
+/// 酷狗增强模式的当前状态，供设置页显示
+async fn get_kugou_enhanced(State(state): State<AppState>) -> Response {
+    use crate::platforms::kugou::cdp;
+
+    let enabled = state.settings.read().await.kugou_cdp;
+    let (port_open, endpoint_available, running) = tokio::task::spawn_blocking(|| {
+        #[cfg(windows)]
+        let running = crate::platforms::kugou::launcher::running();
+        #[cfg(not(windows))]
+        let running = false;
+
+        let port_open = cdp::port_open(cdp::PORT);
+        let endpoint_available = port_open && cdp::endpoint_available(cdp::PORT).unwrap_or(false);
+
+        (port_open, endpoint_available, running)
+    })
+    .await
+    .unwrap_or_default();
+    let status = cdp::status();
+
+    Json(serde_json::json!({
+        "enabled": enabled,
+        "port": cdp::PORT,
+        "portOpen": port_open,
+        "endpointAvailable": endpoint_available,
+        "kugouRunning": running,
+        "connected": enabled && status.connected,
+        "error": if enabled { status.error } else { None },
+    }))
+    .into_response()
+}
+
+#[derive(serde::Deserialize)]
+struct EnhancedRequest {
+    enabled: bool,
+}
+
+/// 切换酷狗增强模式并持久化；只更新运行时开关，不重启服务
+async fn put_kugou_enhanced(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<EnhancedRequest>,
+) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let mut settings = state.settings.write().await;
+    let previous = settings.kugou_cdp;
+
+    settings.kugou_cdp = request.enabled;
+
+    if let Err(error) = settings.save() {
+        settings.kugou_cdp = previous;
+
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("保存设置失败: {error:#}"),
+        )
+            .into_response();
+    }
+
+    state
+        .kugou_enhanced
+        .store(request.enabled, Ordering::Relaxed);
+
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// 以增强模式启动酷狗；酷狗已以普通模式运行时返回 409，不会结束它
+async fn kugou_launch(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    #[cfg(windows)]
+    {
+        use crate::platforms::kugou::launcher::{Launch, launch};
+
+        match tokio::task::spawn_blocking(launch).await {
+            Ok(Ok(Launch::NormalMode)) => (
+                StatusCode::CONFLICT,
+                "酷狗正以普通模式运行，请从托盘完全退出酷狗后再启动",
+            )
+                .into_response(),
+            Ok(Ok(result)) => Json(serde_json::json!({ "result": result })).into_response(),
+            Ok(Err(error)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}")).into_response()
+            }
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        (StatusCode::NOT_IMPLEMENTED, "当前平台不支持启动酷狗").into_response()
+    }
+}
+
+/// 在桌面创建以增强模式启动酷狗的快捷方式
+async fn kugou_shortcut(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    #[cfg(windows)]
+    {
+        match tokio::task::spawn_blocking(crate::platforms::kugou::launcher::create_shortcut).await
+        {
+            Ok(Ok(path)) => Json(serde_json::json!({ "path": path })).into_response(),
+            Ok(Err(error)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}")).into_response()
+            }
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        (StatusCode::NOT_IMPLEMENTED, "当前平台不支持创建快捷方式").into_response()
     }
 }
 

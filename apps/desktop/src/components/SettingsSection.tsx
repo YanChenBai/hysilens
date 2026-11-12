@@ -58,7 +58,7 @@ export function SettingsRow({
 }: {
   label: string;
 
-  description?: string;
+  description?: ReactNode;
 
   descriptionId?: string;
 

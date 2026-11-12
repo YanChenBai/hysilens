@@ -5,13 +5,19 @@
 //!
 //! 采样失败后会放弃内存访问，并且最多每两秒重试一次；期间 SMTC 状态继续发布，缓存歌词由
 //! [`catalog`] 解析，不接触播放器进程
+//!
+//! 开启增强模式时优先通过 [`cdp`] 读取酷狗内嵌网页提供的播放信息，失败时回退到内存读取
 
 pub mod catalog;
+pub mod cdp;
 #[cfg(windows)]
 mod identity;
+#[cfg(windows)]
+pub mod launcher;
 pub mod lyrics;
 #[cfg(windows)]
 mod memory;
+pub mod network;
 
 #[cfg(windows)]
 pub use memory::diagnostic_report;
@@ -20,6 +26,10 @@ use super::{Adapter, Descriptor, LyricsMode, Registration, Sample};
 use crate::model::{Playback, Session, Source};
 use std::{
     path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -68,6 +78,8 @@ impl KugouIdentity {
             ],
             preferred_lyric_id: (self.recommend_krc_id != 0)
                 .then(|| self.recommend_krc_id.to_string()),
+            preferred_document_id: None,
+            metadata_fallback: false,
         }
     }
 }
@@ -81,7 +93,9 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
 };
 
 /// 创建 KuGou adapter 工厂，并为 `cache` 启动后台 KRC cache 扫描器
-pub fn registration(cache: PathBuf) -> Registration {
+///
+/// `enhanced` 为真时优先通过酷狗调试端口读取播放信息；运行中切换会在下一次采样生效
+pub fn registration(cache: PathBuf, enhanced: Arc<AtomicBool>) -> Registration {
     let diagnostic_cache = cache.clone();
 
     Registration {
@@ -115,7 +129,7 @@ pub fn registration(cache: PathBuf) -> Registration {
             }),
         },
         create: Box::new(move |context| {
-            let probe = Probe::new(context.origin);
+            let probe = Probe::new(context.origin, enhanced.clone());
             super::qq_music::cache::spawn_for(cache, context, Source::Kugou, "krc", catalog::read);
             Box::new(probe)
         }),
@@ -130,6 +144,18 @@ pub struct Probe {
     origin: Instant,
 
     media: anyhow::Result<super::qq_music::Probe>,
+
+    /// 增强模式开关，由设置接口在运行中切换
+    enhanced: Arc<AtomicBool>,
+
+    /// 开启增强模式时存在
+    cdp: Option<cdp::Channel>,
+
+    /// 增强模式下按当前歌曲查询酷狗歌词服务
+    network: network::Lookup,
+
+    /// 当前歌曲从网络取得的歌词，本地缓存匹配失败时由 coordinator 使用
+    network_document: Option<Arc<crate::model::Document>>,
 
     #[cfg(windows)]
     memory: Option<memory::Reader>,
@@ -148,6 +174,7 @@ impl std::fmt::Debug for Probe {
 
         debug.field("origin", &self.origin);
         debug.field("media_ready", &self.media.is_ok());
+        debug.field("cdp", &self.cdp);
 
         #[cfg(windows)]
         {
@@ -160,11 +187,15 @@ impl std::fmt::Debug for Probe {
 }
 
 impl Probe {
-    /// 创建 adapter，并将 `server_ms` 的原点设为 `origin`
-    pub fn new(origin: Instant) -> Self {
+    /// 创建 adapter，并将 `server_ms` 的原点设为 `origin`；`enhanced` 开启增强模式
+    pub fn new(origin: Instant, enhanced: Arc<AtomicBool>) -> Self {
         Self {
             origin,
             media: super::qq_music::Probe::new(origin),
+            cdp: None,
+            network: network::Lookup::default(),
+            network_document: None,
+            enhanced,
             #[cfg(windows)]
             memory: None,
             previous: None,
@@ -181,17 +212,41 @@ impl Probe {
     pub fn sample(&mut self) -> Playback {
         let mut playback = match &self.media {
             Ok(probe) => probe.sample(),
-            Err(error) => {
-                return Playback {
-                    server_ms: self.origin.elapsed().as_secs_f64() * 1000.0,
-                    error: Some(error.to_string()),
-                    ..Default::default()
-                };
-            }
+            Err(error) => Playback {
+                server_ms: self.origin.elapsed().as_secs_f64() * 1000.0,
+                error: Some(error.to_string()),
+                ..Default::default()
+            },
         };
         playback
             .sessions
             .retain(|session| session.source_id.eq_ignore_ascii_case("kugou"));
+
+        // 增强模式可用时优先使用它的进度与身份，并释放内存读取句柄；失败时回退到内存方案
+        // 开关在运行中切换时建立或断开通道，不需要重启服务
+        let enabled = self.enhanced.load(Ordering::Relaxed);
+
+        if enabled != self.cdp.is_some() {
+            self.cdp = enabled.then(|| cdp::Channel::new(cdp::PORT));
+        }
+
+        let enhanced = self.cdp.as_mut().map(cdp::Channel::sample);
+
+        self.apply_sample(playback, enhanced)
+    }
+
+    fn apply_sample(
+        &mut self,
+        mut playback: Playback,
+        enhanced: Option<anyhow::Result<cdp::PlayInfo>>,
+    ) -> Playback {
+        // 酷狗不是从带 AppUserModelID 的快捷方式启动时，系统媒体会话可能识别不到它；
+        // 增强模式读到播放信息时直接据此建立会话
+        if playback.sessions.is_empty()
+            && let Some(Ok(info)) = &enhanced
+        {
+            playback.sessions.push(info.session());
+        }
 
         let Some(session) = playback.sessions.first_mut() else {
             #[cfg(windows)]
@@ -201,9 +256,66 @@ impl Probe {
             }
             self.previous = None;
             self.last_attach = None;
+            self.network_document = None;
 
             return playback;
         };
+
+        if let Some(Ok(info)) = &enhanced {
+            playback.error = None;
+            let current = info.session();
+            session.title = current.title;
+            session.artist = current.artist;
+            session.album.clear();
+            session.error = None;
+
+            if let Some(status) = info.status() {
+                session.status = status.into();
+            }
+
+            session.track_id = Some(info.track_id());
+            // 推荐歌词 ID 用于定位以其他版本 hash 命名的本地缓存；下载的歌词作为最后兜底
+            let found = (!info.hash.is_empty()).then(|| {
+                self.network.poll(&network::Track {
+                    hash: info.hash.clone(),
+                    mix_song_id: info.mix_song_id.clone(),
+                    duration_ms: info
+                        .duration_ms
+                        .map_or(0, |duration| duration.round() as u64),
+                    filename: info.filename.clone(),
+                })
+            });
+            let mut lyric_match = info.lyric_match();
+
+            lyric_match.preferred_lyric_id =
+                found.as_ref().and_then(|found| found.lyric_id.clone());
+            self.network_document = found.and_then(|found| found.document);
+            lyric_match.preferred_document_id = self
+                .network_document
+                .as_ref()
+                .map(|document| document.id.clone());
+            session.lyric_match = Some(lyric_match);
+
+            #[cfg(windows)]
+            {
+                self.memory = None;
+                self.attach_error = None;
+            }
+
+            let (position, duration) = (info.position_ms, info.duration_ms);
+            self.publish_timeline(session, position, duration);
+            playback.server_ms = self.origin.elapsed().as_secs_f64() * 1000.0;
+
+            return playback;
+        }
+
+        self.network_document = None;
+
+        let enhanced_error = match enhanced {
+            Some(Err(error)) => Some(format!("{error:#}")),
+            _ => None,
+        };
+
         #[cfg(windows)]
         let timeline = {
             if self.memory.is_none()
@@ -246,27 +358,7 @@ impl Probe {
         }
 
         match timeline {
-            Ok((position, duration)) => {
-                let now = Instant::now();
-                let normal = self.previous.as_ref().is_some_and(
-                    |(title, artist, track_id, old_position, sampled)| {
-                        let elapsed = now.duration_since(*sampled).as_secs_f64() * 1000.0;
-                        title == &session.title
-                            && artist == &session.artist
-                            && track_id == &session.track_id
-                            && elapsed >= 50.0
-                            && (0.8..=1.2).contains(&((position - old_position) / elapsed))
-                    },
-                );
-                apply_timeline(session, position, duration, normal);
-                self.previous = Some((
-                    session.title.clone(),
-                    session.artist.clone(),
-                    session.track_id.clone(),
-                    position,
-                    now,
-                ));
-            }
+            Ok((position, duration)) => self.publish_timeline(session, position, duration),
             Err(error) => {
                 #[cfg(windows)]
                 {
@@ -277,11 +369,37 @@ impl Probe {
                 session.source_position_ms = None;
                 session.rate = None;
                 session.rate_basis = "unavailable".into();
-                session.error = Some(format!("{error:#}"));
+                session.error = Some(match &enhanced_error {
+                    Some(enhanced) => format!("增强模式：{enhanced}；内存读取：{error:#}"),
+                    None => format!("{error:#}"),
+                });
             }
         }
         playback.server_ms = self.origin.elapsed().as_secs_f64() * 1000.0;
         playback
+    }
+
+    /// 发布一次有效进度，并用相邻两次采样推断是否按正常速率播放
+    fn publish_timeline(&mut self, session: &mut Session, position: f64, duration: Option<f64>) {
+        let now = Instant::now();
+        let normal = self.previous.as_ref().is_some_and(
+            |(title, artist, track_id, old_position, sampled)| {
+                let elapsed = now.duration_since(*sampled).as_secs_f64() * 1000.0;
+                title == &session.title
+                    && artist == &session.artist
+                    && track_id == &session.track_id
+                    && elapsed >= 50.0
+                    && (0.8..=1.2).contains(&((position - old_position) / elapsed))
+            },
+        );
+        apply_timeline(session, position, duration, normal);
+        self.previous = Some((
+            session.title.clone(),
+            session.artist.clone(),
+            session.track_id.clone(),
+            position,
+            now,
+        ));
     }
 }
 
@@ -310,7 +428,7 @@ impl Adapter for Probe {
     fn sample(&mut self) -> Sample {
         Sample {
             playback: self.sample(),
-            document: None,
+            document: self.network_document.clone(),
         }
     }
 }
@@ -341,7 +459,7 @@ mod tests {
     #[ignore = "只读采样已经运行的酷狗并导出诊断，不会启动播放器"]
     fn inspect_running_kugou_diagnostics() {
         let origin = Instant::now();
-        let mut probe = Probe::new(origin);
+        let mut probe = Probe::new(origin, Arc::default());
         let mut coordinator =
             crate::coordinator::Coordinator::new("live-diagnostics".into(), vec![DESCRIPTOR]);
 
@@ -353,7 +471,7 @@ mod tests {
         }
 
         let settings = crate::config::Settings::load().unwrap();
-        let registration = registration(settings.kugou_cache_dir);
+        let registration = registration(settings.kugou_cache_dir, Arc::default());
         let report = (registration.diagnostics.collect)(&coordinator.state);
         let path = std::env::temp_dir().join("hysilens-kugou-live-diagnostics.json");
 
@@ -376,6 +494,154 @@ mod tests {
                 .is_some_and(|count| count > 0)
         );
         assert_eq!(report["memoryIdentity"]["validHashAvailable"], true);
+    }
+
+    fn failed_media_probe() -> Probe {
+        Probe {
+            origin: Instant::now(),
+            media: Err(anyhow::anyhow!("SMTC unavailable")),
+            enhanced: Arc::new(AtomicBool::new(true)),
+            cdp: None,
+            network: network::Lookup::default(),
+            network_document: None,
+            #[cfg(windows)]
+            memory: None,
+            previous: None,
+            last_attach: None,
+            #[cfg(windows)]
+            attach_error: None,
+        }
+    }
+
+    fn enhanced_info() -> cdp::PlayInfo {
+        cdp::PlayInfo {
+            play_status: "playing".into(),
+            filename: "Singer B - Track B".into(),
+            hash: String::new(),
+            origin_hash: String::new(),
+            mix_song_id: "42".into(),
+            position_ms: 1000.0,
+            duration_ms: Some(200000.0),
+        }
+    }
+
+    #[test]
+    fn uses_cdp_playback_despite_a_media_error() {
+        let mut probe = failed_media_probe();
+        let playback = Playback {
+            error: Some("SMTC unavailable".into()),
+            ..Default::default()
+        };
+        let sampled = probe.apply_sample(playback, Some(Ok(enhanced_info())));
+
+        assert!(sampled.error.is_none());
+        assert_eq!(sampled.sessions[0].title, "Track B");
+        assert_eq!(sampled.sessions[0].position_ms, Some(1000.0));
+    }
+
+    #[test]
+    fn replaces_stale_smtc_metadata_with_the_cdp_track() {
+        let mut probe = failed_media_probe();
+        let playback = Playback {
+            sessions: vec![Session {
+                source_id: "kugou".into(),
+                title: "Track A".into(),
+                artist: "Singer A".into(),
+                album: "Album A".into(),
+                error: Some("stale".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let sampled = probe.apply_sample(playback, Some(Ok(enhanced_info())));
+        let session = &sampled.sessions[0];
+
+        assert_eq!(
+            (session.title.as_str(), session.artist.as_str()),
+            ("Track B", "Singer B")
+        );
+        assert!(session.album.is_empty());
+        assert!(session.error.is_none());
+        assert_eq!(session.track_id.as_deref(), Some("kugou:cdp:42::"));
+    }
+
+    #[test]
+    fn retains_the_media_error_when_cdp_is_unavailable() {
+        let mut probe = failed_media_probe();
+        let playback = Playback {
+            error: Some("SMTC unavailable".into()),
+            ..Default::default()
+        };
+        let sampled = probe.apply_sample(playback, Some(Err(anyhow::anyhow!("CDP unavailable"))));
+
+        assert_eq!(sampled.error.as_deref(), Some("SMTC unavailable"));
+        assert!(sampled.sessions.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "需要以增强模式运行的酷狗和本地 KRC 缓存"]
+    fn matches_running_kugou_through_enhanced_mode() {
+        let origin = Instant::now();
+        let mut probe = Probe::new(origin, Arc::new(AtomicBool::new(true)));
+        let mut coordinator =
+            crate::coordinator::Coordinator::new("live-enhanced".into(), vec![DESCRIPTOR]);
+        let settings = crate::config::Settings::load().unwrap();
+
+        coordinator.source(Source::Kugou);
+        coordinator.catalog(
+            Source::Kugou,
+            catalog::read(&settings.kugou_cache_dir).unwrap(),
+        );
+
+        for _ in 0..48 {
+            let sample = Adapter::sample(&mut probe);
+            println!(
+                "sessions={:?} error={:?}",
+                sample
+                    .playback
+                    .sessions
+                    .iter()
+                    .map(|session| (&session.source_id, &session.title, &session.track_id))
+                    .collect::<Vec<_>>(),
+                sample.playback.error
+            );
+            coordinator.sample(
+                sample.playback,
+                vec![crate::platforms::AdapterState {
+                    descriptor: DESCRIPTOR,
+                    document: sample.document,
+                }],
+            );
+            if coordinator.state.document.is_some() {
+                break;
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+
+        let session = coordinator.state.session.clone().unwrap();
+        let document = coordinator.state.document.clone();
+
+        println!(
+            "{}",
+            serde_json::json!({
+                "title": session.title,
+                "status": session.status,
+                "positionMs": session.position_ms,
+                "durationMs": session.duration_ms,
+                "rateBasis": session.rate_basis,
+                "trackId": session.track_id,
+                "error": session.error,
+                "lyricsStatus": coordinator.state.lyrics_status,
+                "document": document.as_ref().map(|document| &document.filename),
+            })
+        );
+
+        assert!(session.track_id.unwrap().starts_with("kugou:cdp:"));
+        assert!(session.position_ms.is_some());
+        assert!(cdp::status().connected);
+        assert!(document.is_some_and(|document| !document.tracks.is_empty()));
     }
 
     #[test]

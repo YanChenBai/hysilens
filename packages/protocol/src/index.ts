@@ -271,6 +271,11 @@ export interface AppSettings {
   kugouCacheDir: string;
 
   /**
+   * 酷狗增强模式：优先通过酷狗调试端口读取播放信息，失败时回退到内存读取
+   */
+  kugouCdp: boolean;
+
+  /**
    * 与 overlay UI 共用的外观设置
    */
   overlay: OverlayOptions;

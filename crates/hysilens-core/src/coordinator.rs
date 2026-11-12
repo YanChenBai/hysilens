@@ -22,7 +22,8 @@ pub struct Coordinator {
 
     manual_key: Option<String>,
 
-    embedded_documents: HashMap<Source, Option<Arc<Document>>>,
+    /// adapter 本轮直接给出的歌词：内嵌平台的主要来源，缓存平台本地匹配失败时的网络兜底
+    adapter_documents: HashMap<Source, Option<Arc<Document>>>,
 }
 
 impl Coordinator {
@@ -49,7 +50,7 @@ impl Coordinator {
             catalogs: HashMap::new(),
             platforms,
             manual_key: None,
-            embedded_documents: HashMap::new(),
+            adapter_documents: HashMap::new(),
         }
     }
 
@@ -90,22 +91,37 @@ impl Coordinator {
         }
     }
 
-    /// 保存本轮上报的内嵌歌词 document，然后处理 `playback`
+    /// 保存本轮 adapter 给出的歌词 document，然后处理 `playback`
     pub fn sample(&mut self, playback: Playback, adapters: Vec<AdapterState>) {
-        self.embedded_documents = adapters
+        let previous = self.active_adapter_document();
+
+        self.adapter_documents = adapters
             .into_iter()
-            .filter(|adapter| adapter.descriptor.lyrics == LyricsMode::Embedded)
             .map(|adapter| (adapter.descriptor.source, adapter.document))
             .collect();
 
         self.playback(playback);
 
-        if self
-            .active_platform()
-            .is_some_and(|platform| platform.lyrics == LyricsMode::Embedded)
-        {
+        let Some(platform) = self.active_platform() else {
+            return;
+        };
+
+        if platform.lyrics == LyricsMode::Embedded {
+            self.resolve();
+        } else if self.manual_key.is_none() && self.active_adapter_document() != previous {
+            // 网络兜底歌词在曲目开始后才到达，需要重新解析
             self.resolve();
         }
+    }
+
+    /// 当前平台 adapter 给出的歌词 document 的 id
+    fn active_adapter_document(&self) -> Option<String> {
+        let platform = self.active_platform()?;
+
+        self.adapter_documents
+            .get(&platform.source)?
+            .as_ref()
+            .map(|document| document.id.clone())
     }
 
     /// 切换跟随的平台并忘记任何手动选择
@@ -206,7 +222,7 @@ impl Coordinator {
 
         if platform.lyrics == LyricsMode::Embedded {
             self.state.document = self
-                .embedded_documents
+                .adapter_documents
                 .get(&platform.source)
                 .cloned()
                 .flatten();
@@ -223,25 +239,34 @@ impl Coordinator {
             return;
         }
 
-        let Some(catalog) = self.catalogs.get(&platform.source) else {
+        let network = self
+            .adapter_documents
+            .get(&platform.source)
+            .cloned()
+            .flatten();
+
+        let resolution = self
+            .catalogs
+            .get(&platform.source)
+            .zip(platform.resolve_cache)
+            .map(|(catalog, resolve)| resolve(catalog, session, self.manual_key.as_deref()));
+
+        if let Some(resolution) = resolution {
+            self.state.document = resolution.document;
+            self.state.candidates = resolution.candidates;
+            self.state.lyrics_status = resolution.status.into();
+        } else {
             self.state.lyrics_status = "missing".into();
+        }
 
-            return;
-        };
-
-        let Some(resolve) = platform.resolve_cache else {
-            self.state.lyrics_status = "missing".into();
-
-            return;
-        };
-
-        let resolution = resolve(catalog, session, self.manual_key.as_deref());
-
-        self.state.document = resolution.document;
-
-        self.state.candidates = resolution.candidates;
-
-        self.state.lyrics_status = resolution.status.into();
+        // 本地缓存没有可用匹配且用户未手动选择时，才使用 adapter 从网络取得的歌词
+        if self.state.document.is_none()
+            && self.manual_key.is_none()
+            && let Some(document) = network
+        {
+            self.state.document = Some(document);
+            self.state.lyrics_status = "matchedNetwork".into();
+        }
     }
 }
 
@@ -282,6 +307,68 @@ fn identity(session: Option<&Session>) -> Option<(&str, &str, &str, &str)> {
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn uses_adapter_network_lyrics_only_when_local_cache_has_no_match() {
+        use crate::model::Entry;
+
+        let document = |id: &str| {
+            Arc::new(Document {
+                id: id.into(),
+                filename: String::new(),
+                metadata: Default::default(),
+                tracks: vec![],
+                warnings: vec![],
+            })
+        };
+        let descriptor = crate::platforms::kugou::DESCRIPTOR;
+        let mut coordinator = Coordinator::new("test".into(), vec![descriptor]);
+        let playback = |title: &str| Playback {
+            sessions: vec![Session {
+                source_id: "kugou".into(),
+                title: title.into(),
+                artist: "Singer".into(),
+                status: "playing".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let adapters = |network: Option<&str>| {
+            vec![AdapterState {
+                descriptor,
+                document: network.map(document),
+            }]
+        };
+
+        coordinator.source(Source::Kugou);
+        coordinator.catalog(
+            Source::Kugou,
+            Catalog {
+                entries: vec![Entry {
+                    key: "local".into(),
+                    filename: format!("Singer - Cached-{}-1-00000000.krc", "aa".repeat(16)),
+                    title: "Cached".into(),
+                    artist: "Singer".into(),
+                    album: String::new(),
+                    line_count: 0,
+                    document: document("local"),
+                }],
+                issues: vec![],
+            },
+        );
+
+        // 查询尚未完成时保持 missing，网络歌词到达后不换曲也会重新解析
+        coordinator.sample(playback("Uncached"), adapters(None));
+        assert_eq!(coordinator.state.lyrics_status, "missing");
+        coordinator.sample(playback("Uncached"), adapters(Some("network")));
+        assert_eq!(coordinator.state.lyrics_status, "matchedNetwork");
+        assert_eq!(coordinator.state.document.as_ref().unwrap().id, "network");
+
+        // 本地缓存可匹配时优先使用本地
+        coordinator.sample(playback("Cached"), adapters(Some("network")));
+        assert_eq!(coordinator.state.lyrics_status, "matchedMetadata");
+        assert_eq!(coordinator.state.document.as_ref().unwrap().id, "local");
+    }
 
     #[test]
     fn native_identity_resets_same_title_selection_and_refreshes_lyric_recommendations() {
@@ -327,6 +414,8 @@ mod tests {
                 lyric_match: Some(LyricMatch {
                     file_hashes: vec!["aa".repeat(16)],
                     preferred_lyric_id: Some(recommend_krc_id.to_string()),
+                    preferred_document_id: None,
+                    metadata_fallback: false,
                 }),
                 ..Default::default()
             }],

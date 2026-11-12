@@ -305,6 +305,8 @@ mod tests {
             lyric_match: Some(crate::model::LyricMatch {
                 file_hashes: vec!["private-hash".into()],
                 preferred_lyric_id: Some("private-lyric".into()),
+                preferred_document_id: Some("private-document".into()),
+                metadata_fallback: false,
             }),
             ..Default::default()
         };

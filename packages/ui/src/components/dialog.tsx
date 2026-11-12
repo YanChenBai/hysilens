@@ -9,7 +9,12 @@ import { Button } from './button';
 
 const DialogOriginContext = createContext<{ x: number; y: number } | null>(null);
 
-export type DialogProps<Payload> = BaseDialog.Root.Props<Payload>;
+export type DialogProps<Payload> = BaseDialog.Root.Props<Payload> & {
+  /**
+   * 不经 `DialogTrigger`、由 `open` 受控打开时的展开原点（视口坐标）；未提供时按触发器或点击位置
+   */
+  origin?: { x: number; y: number } | null;
+};
 
 /**
  * 模态框状态容器；鼠标打开时从点击位置展开，键盘打开时从触发器展开
@@ -25,11 +30,15 @@ export type DialogProps<Payload> = BaseDialog.Root.Props<Payload>;
  * </Dialog>
  * ```
  */
-export function Dialog<Payload>({ onOpenChange, ...props }: DialogProps<Payload>) {
+export function Dialog<Payload>({
+  onOpenChange,
+  origin: controlledOrigin,
+  ...props
+}: DialogProps<Payload>) {
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
 
   return (
-    <DialogOriginContext value={origin}>
+    <DialogOriginContext value={controlledOrigin === undefined ? origin : controlledOrigin}>
       <BaseDialog.Root
         {...props}
         onOpenChange={(open, details) => {
@@ -82,11 +91,16 @@ export type DialogContentProps = WithClassName<BaseDialog.Popup.Props>;
 
 /**
  * 带遮罩和位置展开动画的模态内容
+ *
+ * 纵向排列且自身不滚动：较长的内容放进 [`DialogBody`]，标题与操作区保持常驻
  * @example
  * ```tsx
  * <DialogContent>
  *   <DialogTitle>标题</DialogTitle>
- *   <DialogDescription>说明</DialogDescription>
+ *   <DialogBody>
+ *     <DialogDescription>说明</DialogDescription>
+ *   </DialogBody>
+ *   <DialogFooter>…</DialogFooter>
  * </DialogContent>
  * ```
  */
@@ -110,7 +124,7 @@ export function DialogContent({ className, children, style, ...props }: DialogCo
           }) as CSSProperties
         }
         className={cn(
-          'ui-dialog fixed top-1/2 left-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl border bg-card p-6 shadow-2xl outline-none',
+          'ui-dialog fixed top-1/2 left-1/2 z-50 max-h-[85dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex flex-col overflow-hidden rounded-3xl border bg-card p-6 pb-5 shadow-2xl outline-none',
           className,
         )}
       >
@@ -144,7 +158,7 @@ export type DialogTitleProps = WithClassName<BaseDialog.Title.Props>;
 export function DialogTitle({ className, ...props }: DialogTitleProps) {
   return (
     <BaseDialog.Title
-      className={cn('pr-8 text-lg font-semibold tracking-tight', className)}
+      className={cn('shrink-0 pr-8 text-lg font-semibold tracking-tight', className)}
       {...props}
     />
   );
@@ -180,5 +194,26 @@ export type DialogFooterProps = ComponentProps<'div'>;
  * ```
  */
 export function DialogFooter({ className, ...props }: DialogFooterProps) {
-  return <div className={cn('mt-6 flex justify-end gap-2', className)} {...props} />;
+  return <div className={cn('mt-4 flex shrink-0 justify-end gap-2', className)} {...props} />;
+}
+
+export type DialogBodyProps = ComponentProps<'div'>;
+
+/**
+ * 模态框中可滚动的正文；内容超出时只有这一部分滚动，标题与操作区常驻
+ * @example
+ * ```tsx
+ * <DialogBody>
+ *   <DialogDescription>较长的说明</DialogDescription>
+ * </DialogBody>
+ * ```
+ */
+export function DialogBody({ className, ...props }: DialogBodyProps) {
+  return (
+    <div
+      data-slot="dialog-body"
+      className={cn('-mx-6 min-h-0 flex-1 overflow-y-auto overscroll-contain px-6', className)}
+      {...props}
+    />
+  );
 }

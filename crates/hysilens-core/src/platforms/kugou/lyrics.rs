@@ -20,19 +20,29 @@ pub fn load_document(path: &Path) -> anyhow::Result<Document> {
     );
 
     let bytes = fs::read(path)?;
-    ensure!(
-        bytes.len() <= 4 * 1024 * 1024 && bytes.starts_with(b"krc1"),
-        "KRC 文件头无效"
-    );
 
-    let plain = String::from_utf8(KrcDecrypter.decrypt_bytes(&bytes)?)?;
-    parse(
-        plain.trim_start_matches('\u{feff}'),
+    decode(
+        &bytes,
         path.file_name()
             .context("缺少文件名")?
             .to_string_lossy()
             .into_owned(),
     )
+}
+
+/// 把 KRC 字节解码为文档；`filename` 记录在文档中用于显示
+///
+/// # Errors
+///
+/// 超过 4 MiB、缺少 `krc1` 头部、无法解密或不含同步歌词行时返回错误
+pub fn decode(bytes: &[u8], filename: String) -> anyhow::Result<Document> {
+    ensure!(
+        bytes.len() <= 4 * 1024 * 1024 && bytes.starts_with(b"krc1"),
+        "KRC 文件头无效"
+    );
+
+    let plain = String::from_utf8(KrcDecrypter.decrypt_bytes(bytes)?)?;
+    parse(plain.trim_start_matches('\u{feff}'), filename)
 }
 
 fn parse(plain: &str, filename: String) -> anyhow::Result<Document> {

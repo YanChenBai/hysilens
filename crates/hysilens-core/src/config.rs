@@ -24,6 +24,9 @@ pub struct Settings {
     /// 酷狗歌词 cache 目录
     pub kugou_cache_dir: PathBuf,
 
+    /// 酷狗增强模式：优先通过酷狗调试端口读取播放信息，失败时回退到内存读取
+    pub kugou_cdp: bool,
+
     // server
     /// overlay server 监听的 loopback HTTP 端口
     pub port: u16,
@@ -41,6 +44,7 @@ impl Default for Settings {
             port: 38473,
             cache_dir: "D:/QQMusicCache/QQMusicLyricNew".into(),
             kugou_cache_dir: "D:/Kugou/Lyric".into(),
+            kugou_cdp: false,
             overlay: OverlaySettings::default(),
         }
     }
