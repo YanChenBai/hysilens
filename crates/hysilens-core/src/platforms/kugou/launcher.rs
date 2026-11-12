@@ -31,10 +31,10 @@ use windows::{
         },
         UI::Shell::{
             FOLDERID_Desktop, IShellLinkW, KF_FLAG_DEFAULT, PropertiesSystem::IPropertyStore,
-            SHGetKnownFolderPath, ShellLink,
+            SHGetKnownFolderPath, SHStrDupW, ShellLink,
         },
     },
-    core::{HSTRING, Interface, PCWSTR, PWSTR, w},
+    core::{HSTRING, Interface, PCWSTR, w},
 };
 
 /// 桌面快捷方式的文件名
@@ -204,15 +204,30 @@ pub fn create_shortcut() -> anyhow::Result<PathBuf> {
     let executable = executable()?;
 
     // SAFETY: 在当前线程初始化 COM，成功时在函数结束前配对调用 CoUninitialize
-    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
+    unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
+        .ok()
+        .context("无法初始化快捷方式所需的 COM apartment")?;
     let result = write_shortcut(&executable);
 
-    if initialized {
-        // SAFETY: 与上面成功的 CoInitializeEx 配对
-        unsafe { CoUninitialize() };
-    }
+    // SAFETY: 与上面成功的 CoInitializeEx 配对，write_shortcut 中的 COM 对象均已释放
+    unsafe { CoUninitialize() };
 
     result
+}
+
+fn app_user_model_id() -> windows::core::Result<PROPVARIANT> {
+    // SAFETY: 输入字符串在调用期间有效；SHStrDupW 分配的内存交由 PROPVARIANT 析构时释放
+    let id = unsafe { SHStrDupW(&HSTRING::from(APP_USER_MODEL_ID))? };
+
+    Ok(PROPVARIANT {
+        Anonymous: PROPVARIANT_0 {
+            Anonymous: std::mem::ManuallyDrop::new(PROPVARIANT_0_0 {
+                vt: VT_LPWSTR,
+                Anonymous: PROPVARIANT_0_0_0 { pwszVal: id },
+                ..Default::default()
+            }),
+        },
+    })
 }
 
 fn write_shortcut(executable: &Path) -> anyhow::Result<PathBuf> {
@@ -240,19 +255,7 @@ fn write_shortcut(executable: &Path) -> anyhow::Result<PathBuf> {
         link.SetIconLocation(&HSTRING::from(executable.as_os_str()), 0)?;
         link.SetDescription(&HSTRING::from("以 Hysilens 增强模式启动酷狗音乐"))?;
 
-        // PROPVARIANT 只借用本地缓冲区，SetValue 会复制字符串，因此不能对它调用 PropVariantClear
-        let mut id: Vec<u16> = APP_USER_MODEL_ID.encode_utf16().chain(Some(0)).collect();
-        let value = PROPVARIANT {
-            Anonymous: PROPVARIANT_0 {
-                Anonymous: std::mem::ManuallyDrop::new(PROPVARIANT_0_0 {
-                    vt: VT_LPWSTR,
-                    Anonymous: PROPVARIANT_0_0_0 {
-                        pwszVal: PWSTR(id.as_mut_ptr()),
-                    },
-                    ..Default::default()
-                }),
-            },
-        };
+        let value = app_user_model_id().context("无法分配快捷方式的应用标识")?;
 
         let store: IPropertyStore = link.cast()?;
         store
@@ -271,6 +274,21 @@ fn write_shortcut(executable: &Path) -> anyhow::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_id_variant_owns_its_string() {
+        for _ in 0..100 {
+            let value = app_user_model_id().unwrap();
+
+            assert_eq!(value.vt(), VT_LPWSTR);
+
+            // SAFETY: 上面已检查类型，字符串由 value 持有且以 null 结尾
+            let id = unsafe { value.Anonymous.Anonymous.Anonymous.pwszVal.to_string() }.unwrap();
+
+            assert_eq!(id, APP_USER_MODEL_ID);
+            drop(value);
+        }
+    }
 
     #[test]
     #[ignore = "会在桌面创建或覆盖增强模式快捷方式"]
