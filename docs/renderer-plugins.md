@@ -4,6 +4,10 @@
 
 ## 快速开始
 
+浏览器源的最低兼容目标为 Chromium 90，`hysilens build` 会设置对应的 JS 与 CSS 编译目标。插件使用的运行时 API 和 CSS 特性也应兼容 Chromium 90，并在目标直播软件中验证渲染效果。
+
+开发者可将悬浮层地址的路径改为 `/browser-info`（例如 `http://127.0.0.1:38473/browser-info`），查看浏览器版本、User-Agent、页面帧率、帧耗时，并复制或导出报告。此页面是内嵌 JS/CSS 的独立 HTML，由 HTTP 服务直接提供，无需 React 或前端构建产物；没有控制界面入口，不连接播放器、不检测 API/CSS 能力，也不上传报告。保留原端口；临时测试端口不改变应用默认的 38473。
+
 ```bash
 hysilens create my-lyrics --name 我的歌词   # 脚手架
 cd my-lyrics

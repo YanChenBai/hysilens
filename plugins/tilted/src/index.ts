@@ -200,7 +200,11 @@ function createStage(container: HTMLElement) {
 
     const time = state.time;
     const lines = state.document?.tracks.find(track => track.kind === 'original')?.lines ?? [];
-    const nextFocus = lines.findLastIndex(line => line.startMs <= time);
+
+    const nextFocus = lines.reduce(
+      (focus, line, index) => (line.startMs <= time ? index : focus),
+      -1,
+    );
 
     if (!changed && nextFocus === focused) {
       return;

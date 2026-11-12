@@ -90,7 +90,7 @@ function Lyrics({
   time: number;
 }) {
   const lines = lyrics?.tracks.find(track => track.kind === 'original')?.lines ?? [];
-  const focus = lines.findLastIndex(line => line.startMs <= time);
+  const focus = lines.reduce((focus, line, index) => (line.startMs <= time ? index : focus), -1);
   const count = theme.visibleLines;
 
   const rows: RenderLine[] = lines.map((line, index) => {

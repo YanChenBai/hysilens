@@ -355,6 +355,8 @@ pub async fn serve_on(
 
 fn renderer_routes() -> Router<AppState> {
     Router::new()
+        .route("/browser-info", get(browser_info))
+        .route("/browser-info/", get(browser_info))
         .route("/api/events", get(events))
         .route("/api/plugins", get(plugin_list))
         .route("/api/plugins/{id}/view", get(plugin_view))
@@ -363,10 +365,20 @@ fn renderer_routes() -> Router<AppState> {
         .layer(DefaultBodyLimit::max(64 * 1024))
 }
 
+async fn browser_info() -> Response {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+        ],
+        include_str!("server/browser-info.html"),
+    )
+        .into_response()
+}
+
 async fn embedded(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
-    let path = if path.is_empty() || path == "playground" || path == "settings" || path == "control"
-    {
+    let path = if matches!(path, "" | "playground" | "settings" | "control") {
         "index.html"
     } else {
         path
@@ -731,6 +743,46 @@ fn test_state() -> (
 mod asset_tests {
     use super::*;
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn serves_standalone_browser_info_without_frontend_assets() {
+        let (state, _snapshots, _actions) = test_state();
+        let router = renderer_routes().with_state(state);
+
+        for path in ["/browser-info", "/browser-info/"] {
+            let request = axum::http::Request::builder()
+                .uri(path)
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let response = router.clone().oneshot(request).await.unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.headers()[axum::http::header::CONTENT_TYPE],
+                "text/html; charset=utf-8"
+            );
+            assert_eq!(
+                response.headers()[axum::http::header::CACHE_CONTROL],
+                "no-store"
+            );
+
+            let body = axum::body::to_bytes(response.into_body(), 128 * 1024)
+                .await
+                .unwrap();
+            let html = std::str::from_utf8(&body).unwrap();
+
+            assert!(html.contains("<style>"));
+            assert!(html.contains("<script>"));
+            assert!(html.contains("requestAnimationFrame"));
+            assert!(!html.contains("src="));
+            assert!(!html.contains("/assets/"));
+        }
+
+        assert_eq!(
+            embedded("/unknown-page".parse().unwrap()).await.status(),
+            StatusCode::NOT_FOUND
+        );
+    }
 
     #[tokio::test]
     async fn exposes_only_renderer_resources_over_http() {

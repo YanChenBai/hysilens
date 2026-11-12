@@ -229,7 +229,8 @@ export default definePlugin<typeof config>({
     const render = () => {
       const now = time();
       const lines = lyrics()?.tracks.find(track => track.kind === 'original')?.lines ?? [];
-      const current = now === null ? undefined : lines.findLast(item => item.startMs <= now);
+      const focus = now === null ? -1 : lines.reduce((index, item, candidate) => item.startMs <= now ? candidate : index, -1);
+      const current = lines[focus];
       const { color, fontSize, fontFamily } = config();
       Object.assign(line.style, { color, fontSize: \`\${fontSize}px\`, fontFamily });
       line.textContent = current?.text ?? '';

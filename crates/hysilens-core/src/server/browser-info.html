@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="zh-CN" class="browser-info">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hysilens · 浏览器内核信息</title>
+    <style>
+      html.browser-info,
+      html.browser-info body {
+        margin: 0;
+        background: #000;
+        color: #ededf0;
+        color-scheme: dark;
+        font:
+          13px/1.5 'Inter',
+          'Segoe UI',
+          'Microsoft YaHei',
+          sans-serif;
+      }
+      .browser-info-page {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 1920px;
+        margin: 0 auto;
+        padding: 26px 32px 16px;
+      }
+      .browser-info-page *,
+      .browser-info-page *::before,
+      .browser-info-page *::after {
+        box-sizing: border-box;
+      }
+      .browser-info-page h1,
+      .browser-info-page h2,
+      .browser-info-page p {
+        margin: 0;
+      }
+      .browser-info-page button,
+      .browser-info-page input,
+      .browser-info-page select {
+        font: inherit;
+      }
+      .browser-info-page button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        padding: 8px 12px;
+        border: 1px solid #29292d;
+        border-radius: 10px;
+        background: #0a0a0b;
+        color: #e4e4e7;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .browser-info-page button:hover {
+        background: #1b1b1e;
+      }
+      .browser-info-page button:focus-visible,
+      .browser-info-page input:focus-visible,
+      .browser-info-page select:focus-visible,
+      .browser-info-page summary:focus-visible {
+        outline: 2px solid #b5a5e5;
+        outline-offset: 3px;
+      }
+      .browser-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .browser-eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #82828b;
+        font-size: 9px;
+        letter-spacing: 1.5px;
+      }
+      .browser-eyebrow span {
+        color: #42424b;
+      }
+      .browser-header h1 {
+        font-size: 27px;
+        font-weight: 600;
+        letter-spacing: -0.8px;
+        margin: 6px 0 4px;
+      }
+      .browser-header p {
+        color: #909099;
+        font-size: 12px;
+      }
+      .browser-header-actions {
+        display: flex;
+        position: relative;
+        gap: 8px;
+      }
+      .browser-info-page .browser-primary-button {
+        background: #ededf0;
+        color: #151518;
+        border-color: #ededf0;
+      }
+      .browser-info-page .browser-primary-button:hover {
+        background: #d4d4db;
+      }
+      .browser-copy-status {
+        position: absolute;
+        top: 42px;
+        right: 0;
+        color: #aaa3c7;
+        font-size: 11px;
+      }
+      .browser-summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .browser-metric {
+        min-width: 0;
+        background: #09090a;
+        border: 1px solid #242427;
+        border-radius: 14px;
+        padding: 13px 16px;
+      }
+      .browser-metric > div {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: #909099;
+        font-size: 10px;
+        letter-spacing: 0.7px;
+      }
+      .browser-metric > strong {
+        display: block;
+        font-size: 29px;
+        font-weight: 500;
+        letter-spacing: -1px;
+        margin: 4px 0 3px;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+      }
+      .browser-metric:first-child > strong {
+        font-size: 22px;
+        padding: 4px 0;
+        letter-spacing: -0.5px;
+      }
+      .browser-metric small {
+        font-size: 13px;
+        color: #6f6f7a;
+        font-weight: 400;
+        letter-spacing: 0;
+      }
+      .browser-metric > span {
+        color: #83838d;
+        font-size: 10px;
+      }
+      .browser-report-details {
+        margin-top: 15px;
+        border: 1px solid #242428;
+        border-radius: 12px;
+        background: #080809;
+      }
+      .browser-report-details summary {
+        cursor: pointer;
+        padding: 11px 13px;
+        font-size: 11px;
+        color: #a6a6b0;
+      }
+      .browser-report-details summary > span {
+        float: right;
+        font:
+          10px Consolas,
+          monospace;
+        color: #5e5e6b;
+      }
+      .browser-report-details > div {
+        padding: 0 13px 13px;
+      }
+      .browser-report-details h2 {
+        font-size: 11px;
+        font-weight: 400;
+        color: #777782;
+      }
+      .browser-report-details p {
+        font-size: 10px;
+        color: #777782;
+        margin: 8px 0;
+      }
+      .browser-info-page pre,
+      .browser-info-page textarea {
+        box-sizing: border-box;
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #28282e;
+        border-radius: 8px;
+        background: #0e0e10;
+        color: #bdbdc7;
+        font:
+          10px/1.5 Consolas,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .browser-info-page textarea {
+        display: block;
+        margin-top: 8px;
+        height: 220px;
+        resize: vertical;
+      }
+      .browser-page-footer {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 12px;
+        color: #4d4d59;
+        font-size: 9px;
+      }
+      @media (min-width: 1600px) and (max-height: 1200px) {
+        .browser-info-page {
+          padding: 20px 28px 12px;
+        }
+        .browser-header {
+          margin-bottom: 14px;
+        }
+        .browser-metric {
+          padding: 10px 14px;
+        }
+      }
+      @media (max-width: 700px) {
+        .browser-info-page {
+          padding: 18px 14px;
+        }
+        .browser-header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .browser-header h1 {
+          font-size: 23px;
+        }
+        .browser-summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      .browser-detail-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 14px;
+        margin-top: 18px;
+      }
+      .browser-info-card {
+        min-width: 0;
+        background: #080809;
+        border: 1px solid #252529;
+        border-radius: 14px;
+        padding: 15px 17px;
+      }
+      .browser-card-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+      .browser-card-heading h2 {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #dedee5;
+      }
+      .browser-card-heading > span {
+        color: #656571;
+        font-size: 9px;
+        letter-spacing: 0.6px;
+      }
+      .browser-info-rows {
+        margin: 0;
+      }
+      .browser-info-rows > div {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 14px;
+        min-height: 29px;
+        padding: 6px 0;
+        border-bottom: 1px solid #1d1d21;
+        font-size: 11px;
+      }
+      .browser-info-rows > div:last-child {
+        border-bottom: 0;
+      }
+      .browser-info-rows dt {
+        color: #777783;
+        white-space: nowrap;
+      }
+      .browser-info-rows dd {
+        color: #c9c9d3;
+        margin: 0;
+        text-align: right;
+        overflow-wrap: anywhere;
+      }
+      .browser-frame-chart {
+        background: #0b0b0e;
+        border: 1px solid #202024;
+        border-radius: 9px;
+        padding: 9px 11px 2px;
+        margin: 11px 0 8px;
+      }
+      .browser-chart-labels {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 9px;
+        color: #6d6d7a;
+      }
+      .browser-frame-chart svg {
+        display: block;
+        width: 100%;
+        height: 78px;
+      }
+      .browser-card-heading .browser-sampling-status {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: #9a90b7;
+        letter-spacing: 0;
+      }
+      .browser-sampling-note {
+        font-size: 10px;
+        color: #676774;
+        margin-top: 11px !important;
+        line-height: 1.6;
+      }
+      .browser-user-agent {
+        margin-top: 14px;
+      }
+      .browser-user-agent pre {
+        margin: 0;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: #8f8f9d;
+        line-height: 1.8;
+      }
+      @media (min-width: 1000px) {
+        .browser-info-page {
+          max-width: 1500px;
+        }
+      }
+      @media (max-width: 700px) {
+        .browser-detail-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="browser-info-page">
+      <header class="browser-header">
+        <div>
+          <div class="browser-eyebrow">HYSILENS <span>/</span> DEVELOPER TOOLS</div>
+          <h1>浏览器内核信息</h1>
+          <p>仅记录浏览器版本与页面帧率</p>
+        </div>
+        <div class="browser-header-actions">
+          <button type="button" class="browser-primary-button" id="copy">复制报告</button>
+          <button type="button" id="download">导出 JSON</button>
+          <span class="browser-copy-status" id="copy-status" role="status"> </span>
+        </div>
+      </header>
+      <section class="browser-summary" aria-label="版本与帧率概览">
+        <div class="browser-metric">
+          <div>CHROMIUM</div>
+          <strong id="chromium">—</strong>
+          <span>来自当前浏览器 User-Agent</span>
+        </div>
+        <div class="browser-metric">
+          <div>实时帧率</div>
+          <strong id="animation-fps">
+            <span id="fps">—</span>
+            <small> FPS</small>
+          </strong>
+          <span>
+            <span id="sample-status">每秒更新 · rAF 采样</span>
+          </span>
+        </div>
+        <div class="browser-metric">
+          <div>平均帧耗时</div>
+          <strong>
+            <span id="average">—</span>
+            <small> ms</small>
+          </strong>
+          <span>P95 <span data-p95>—</span></span>
+        </div>
+        <div class="browser-metric">
+          <div>最长帧耗时</div>
+          <strong>
+            <span id="longest">—</span>
+            <small> ms</small>
+          </strong>
+          <span>最近一个采样周期</span>
+        </div>
+      </section>
+      <div class="browser-detail-grid">
+        <section class="browser-info-card">
+          <div class="browser-card-heading">
+            <h2>内核版本</h2>
+            <span>ENGINE VERSION</span>
+          </div>
+          <dl class="browser-info-rows">
+            <div>
+              <dt>Chromium 版本</dt>
+              <dd data-chromium>—</dd>
+            </div>
+            <div>
+              <dt>CEF 标识</dt>
+              <dd id="cef">—</dd>
+            </div>
+          </dl>
+        </section>
+        <section class="browser-info-card">
+          <div class="browser-card-heading">
+            <h2>帧率采样</h2>
+            <span class="browser-sampling-status">
+              <span id="visibility">实时采样</span>
+            </span>
+          </div>
+          <div class="browser-frame-chart">
+            <div class="browser-chart-labels">
+              <span>最近 32 次采样</span>
+              <span><span id="ceiling">60</span> FPS</span>
+            </div>
+            <svg
+              viewBox="0 0 600 110"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="近期页面帧率曲线"
+            >
+              <path
+                d="M0 20H600 M0 57H600 M0 94H600"
+                stroke="#242428"
+                stroke-width="1"
+                fill="none"
+              />
+              <polyline
+                id="frame-line"
+                points=""
+                fill="none"
+                stroke="#b5a5d8"
+                stroke-width="2"
+                vector-effect="non-scaling-stroke"
+              />
+            </svg>
+          </div>
+          <dl class="browser-info-rows">
+            <div>
+              <dt>采样间隔</dt>
+              <dd>1 秒</dd>
+            </div>
+            <div>
+              <dt>有效采样</dt>
+              <dd id="seconds">0 秒</dd>
+            </div>
+            <div>
+              <dt>累计帧数</dt>
+              <dd id="frames">0</dd>
+            </div>
+            <div>
+              <dt>P95 帧耗时</dt>
+              <dd data-p95>—</dd>
+            </div>
+            <div>
+              <dt>本次最长帧</dt>
+              <dd id="longest-detail">—</dd>
+            </div>
+          </dl>
+          <p class="browser-sampling-note">
+            帧率反映当前页面的动画调度，不等同于 OBS 或直播姬的推流帧率
+          </p>
+        </section>
+      </div>
+      <section class="browser-info-card browser-user-agent">
+        <div class="browser-card-heading">
+          <h2>User-Agent</h2>
+          <span>RAW IDENTIFICATION</span>
+        </div>
+        <pre id="user-agent"></pre>
+      </section>
+      <details class="browser-report-details" id="report-details">
+        <summary>完整诊断报告<span>JSON</span></summary>
+        <div>
+          <textarea id="report" aria-label="完整诊断信息" readonly></textarea>
+        </div>
+      </details>
+      <footer class="browser-page-footer">
+        <span>Hysilens / Browser diagnostics</span>
+        <span>仅在本机采集 · 不上传报告</span>
+      </footer>
+    </main>
+    <script>
+      (() => {
+        'use strict';
+
+        const element = id => document.getElementById(id);
+        const ua = navigator.userAgent;
+        const chromium = /(?:Chrome|Chromium)\/([\d.]+)/.exec(ua);
+        const cef = /CEF\/([\d.]+)/i.exec(ua);
+        const report = {
+          schemaVersion: 3,
+          chromium: chromium ? chromium[1] : '未识别',
+          cef: cef ? cef[1] : 'User-Agent 未提供',
+          userAgent: ua,
+          visibility: document.visibilityState,
+          animation: {
+            fps: null,
+            averageMs: 0,
+            p95Ms: 0,
+            longestMs: 0,
+            frames: 0,
+            seconds: 0,
+            history: [],
+          },
+        };
+        const sample = report.animation;
+        let previousAt = null;
+        let intervals = [];
+        let elapsedMs = 0;
+        let activeMs = 0;
+        let frame;
+
+        function updateReport() {
+          element('report').value = JSON.stringify(report, null, 2);
+        }
+
+        function render() {
+          const milliseconds = value => value.toFixed(2) + ' ms';
+          const ceiling = Math.max(60, ...sample.history);
+          element('fps').textContent = String(sample.fps);
+          element('average').textContent = sample.averageMs.toFixed(2);
+          element('longest').textContent = sample.longestMs.toFixed(2);
+          element('longest-detail').textContent = milliseconds(sample.longestMs);
+          document.querySelectorAll('[data-p95]').forEach(node => {
+            node.textContent = milliseconds(sample.p95Ms);
+          });
+          element('seconds').textContent = sample.seconds.toFixed(1) + ' 秒';
+          element('frames').textContent = String(sample.frames);
+          element('ceiling').textContent = String(ceiling);
+          element('frame-line').setAttribute(
+            'points',
+            sample.history
+              .map((fps, index) => (index * 600) / 31 + ',' + (94 - (fps / ceiling) * 74))
+              .join(' '),
+          );
+          updateReport();
+        }
+
+        /* 后台恢复时丢弃跨越隐藏期间的帧间隔 */
+        function visibilityChanged() {
+          previousAt = null;
+          intervals = [];
+          elapsedMs = 0;
+          report.visibility = document.visibilityState;
+          element('visibility').textContent = document.hidden ? '后台暂停' : '实时采样';
+          element('sample-status').textContent = document.hidden
+            ? '页面处于后台 · 采样暂停'
+            : '每秒更新 · rAF 采样';
+          updateReport();
+        }
+
+        function tick(now) {
+          if (!document.hidden && previousAt !== null) {
+            const interval = now - previousAt;
+            if (interval > 0) {
+              intervals.push(interval);
+              elapsedMs += interval;
+              activeMs += interval;
+              sample.frames++;
+              if (elapsedMs >= 1000) {
+                const sorted = intervals.slice().sort((a, b) => a - b);
+                sample.fps = Math.round((intervals.length * 1000) / elapsedMs);
+                sample.averageMs = elapsedMs / intervals.length;
+                sample.p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1];
+                sample.longestMs = sorted[sorted.length - 1];
+                sample.seconds = activeMs / 1000;
+                sample.history = sample.history.slice(-31).concat(sample.fps);
+                render();
+                intervals = [];
+                elapsedMs = 0;
+              }
+            }
+          }
+          previousAt = document.hidden ? null : now;
+          frame = requestAnimationFrame(tick);
+        }
+
+        element('chromium').textContent = report.chromium;
+        document.querySelector('[data-chromium]').textContent = report.chromium;
+        element('cef').textContent = report.cef;
+        element('user-agent').textContent = ua;
+        element('copy').addEventListener('click', async () => {
+          updateReport();
+          try {
+            await navigator.clipboard.writeText(element('report').value);
+            element('copy-status').textContent = '已复制';
+          } catch {
+            element('report-details').open = true;
+            element('report').focus();
+            element('report').select();
+            element('copy-status').textContent = '请手动复制已选中的报告';
+          }
+        });
+        element('download').addEventListener('click', () => {
+          updateReport();
+          const url = URL.createObjectURL(
+            new Blob([element('report').value], { type: 'application/json' }),
+          );
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = 'hysilens-browser-' + report.chromium + '.json';
+          anchor.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+        document.addEventListener('visibilitychange', visibilityChanged);
+        window.addEventListener('pagehide', () => {
+          cancelAnimationFrame(frame);
+          previousAt = null;
+        });
+        window.addEventListener('pageshow', event => {
+          if (event.persisted) {
+            visibilityChanged();
+            frame = requestAnimationFrame(tick);
+          }
+        });
+        visibilityChanged();
+        frame = requestAnimationFrame(tick);
+      })();
+    </script>
+  </body>
+</html>

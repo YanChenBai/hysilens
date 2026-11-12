@@ -203,7 +203,7 @@ export function PluginView({ playground = false }: { playground?: boolean }) {
       title={plugin.name}
       src={ready ? src : undefined}
       sandbox="allow-scripts"
-      className="absolute inset-0 block h-full w-full border-0 bg-transparent"
+      className="plugin-overlay-frame"
       style={{
         colorScheme: previewColorScheme(preview),
         transform: `scale(${pluginScale(config.data?.scale, plugin.features.scale === true)})`,

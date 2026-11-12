@@ -2,6 +2,8 @@ import type { PluginManifest } from '@hysilens/plugin';
 import type { AnySchemaObject, ValidateFunction } from 'ajv';
 import Ajv2020 from 'ajv/dist/2020';
 
+import { cloneValue } from './clone';
+
 /**
  * plugin registry 提供的目录扫描结果
  */
@@ -70,7 +72,7 @@ function validator(ajv: Ajv2020, mode: string, plugin: PluginManifest): Validate
 
 function asObject(value: unknown): ConfigValues {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? structuredClone(value as ConfigValues)
+    ? (cloneValue(value) as ConfigValues)
     : {};
 }
 

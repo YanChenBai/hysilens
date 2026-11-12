@@ -4,12 +4,14 @@ import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
   plugins: [react({ compiler: true }), tailwindcss()],
+  build: { target: 'chrome90', cssTarget: 'chrome90' },
   server: {
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
     proxy: {
       '/api': { target: 'http://127.0.0.1:38473', ws: true },
+      '/browser-info': { target: 'http://127.0.0.1:38473' },
       '/plugins': { target: 'http://127.0.0.1:38473' },
     },
   },
