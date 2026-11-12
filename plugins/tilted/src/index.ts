@@ -10,10 +10,24 @@ import './style.css';
 type Theme = ConfigOf<typeof config>;
 
 interface State {
+  /**
+   * 解析后的 plugin 配置；只有值变化时才会是新对象
+   */
   theme: Theme;
+
+  /**
+   * 当前歌词文档，host 没有时为 null
+   */
   document: LyricDocument | null;
-  /** Lyric time with offset applied. */
+
+  /**
+   * 已应用 offset 的歌词时间
+   */
   time: number | null;
+
+  /**
+   * host 希望显示歌词时为 true；暂停或空闲时为 false
+   */
   visible: boolean;
 }
 
@@ -24,6 +38,9 @@ function div(className: string) {
   return node;
 }
 
+/**
+ * 立体层和可选投影，格式化为 CSS `text-shadow` 值
+ */
 function textShadow(theme: Theme): string {
   const shadowAlpha = Math.round(theme.shadowOpacity * 255)
     .toString(16)
@@ -51,7 +68,9 @@ function lyricFace(text: string) {
   return original;
 }
 
-/** DOM-measured layout: rebuilt on theme or document changes, re-focused on line changes. */
+/**
+ * 按 DOM 测量布局：主题或文档变化时重建，行变化时重新定位
+ */
 function createStage(container: HTMLElement) {
   const stage = document.createElement('main');
   stage.className = 'tilted';
@@ -96,6 +115,7 @@ function createStage(container: HTMLElement) {
 
   function rebuild(state: State) {
     applyTheme(state.theme);
+
     const lines = state.document?.tracks.find(track => track.kind === 'original')?.lines ?? [];
     rows = lines.map(line => {
       const row = div('line');
@@ -103,9 +123,13 @@ function createStage(container: HTMLElement) {
 
       return row;
     });
+
     track.replaceChildren(...rows);
   }
 
+  /**
+   * 定位 track 并缩放投影平面；`snap` 在测量时跳过 transition，使读到的 bounds 对应最终布局
+   */
   function layout(snap = false) {
     if (!current || stage.hidden || plane.clientWidth === 0) {
       return;
@@ -135,10 +159,13 @@ function createStage(container: HTMLElement) {
     viewport.style.height = `${window.height}px`;
     track.style.transform = `translateY(${window.translateY}px)`;
 
-    // Fit the whole projected lyric plane inside the available canvas.
+    /* 把整个投影后的歌词平面缩放进取景框 */
     plane.style.setProperty('--fit', '1');
+
+    /* 读取 bounds 会先落定新的 track 位置，再恢复 transition */
     const bounds = plane.getBoundingClientRect();
 
+    /* 48px 是 tilted 平面与视口边缘的留白 */
     const fit = Math.min(
       1,
       (stage.clientWidth - 48) / bounds.width,
@@ -147,7 +174,6 @@ function createStage(container: HTMLElement) {
 
     plane.style.setProperty('--fit', String(Math.max(0.01, fit)));
 
-    // bounds above flushes the new track position before transitions are restored.
     if (snap) {
       track.style.removeProperty('transition');
     }
@@ -161,7 +187,7 @@ function createStage(container: HTMLElement) {
       return;
     }
 
-    // The runtime hands out a new config object only when it changes, so identity suffices.
+    /* runtime 只在配置变化时给出新对象，所以比较引用即可 */
     const changed = previousDocument !== state.document || previousTheme !== state.theme;
 
     if (changed) {
@@ -183,6 +209,7 @@ function createStage(container: HTMLElement) {
       row.classList.toggle('current', index === focused);
       row.setAttribute('aria-current', String(index === focused));
     });
+
     layout(changed);
   }
 

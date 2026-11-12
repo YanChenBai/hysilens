@@ -2,6 +2,11 @@ import type { PluginManifest } from '@hysilens/plugin';
 import type { AnySchemaObject, ValidateFunction } from 'ajv';
 import Ajv2020 from 'ajv/dist/2020';
 
+/**
+ * 从 host API 获取并解析 JSON
+ *
+ * @throws 响应不是 OK 时抛出，消息为响应体内容
+ */
 export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { cache: 'no-store' });
 
@@ -12,6 +17,11 @@ export async function getJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/**
+ * 向 host API 发送 JSON 请求体
+ *
+ * @throws 响应不是 OK 时抛出，消息为响应体内容
+ */
 export async function putJson(path: string, value: unknown): Promise<void> {
   const response = await fetch(path, {
     method: 'PUT',
@@ -24,13 +34,29 @@ export async function putJson(path: string, value: unknown): Promise<void> {
   }
 }
 
+/**
+ * 由 `/api/plugins` 提供的 plugin 目录扫描结果
+ */
 export interface PluginCatalog {
+  /**
+   * 校验通过且已安装的 plugin
+   */
   plugins: PluginManifest[];
+
+  /**
+   * 校验或加载失败的 plugin 对应的可读问题描述
+   */
   errors: string[];
+
+  /**
+   * 服务端上报的 catalog 版本号，存在时才有
+   */
   revision?: number;
 }
 
-/** Upload a `hysilens pack` archive; the server validates, installs and announces it. */
+/**
+ * 上传 `hysilens pack` 归档；由服务端校验、安装并广播
+ */
 export async function installPlugin(file: Blob): Promise<PluginManifest> {
   const response = await fetch('/api/plugins/install', {
     method: 'POST',
@@ -45,7 +71,9 @@ export async function installPlugin(file: Blob): Promise<PluginManifest> {
   return response.json() as Promise<PluginManifest>;
 }
 
-/** Force the server to re-read plugin directories (fallback when file events are missed). */
+/**
+ * 强制服务端重新读取 plugin 目录，文件事件丢失时的兜底
+ */
 export async function rescanPlugins(): Promise<PluginCatalog> {
   const response = await fetch('/api/plugins/rescan', { method: 'POST' });
 
@@ -56,15 +84,30 @@ export async function rescanPlugins(): Promise<PluginCatalog> {
   return response.json() as Promise<PluginCatalog>;
 }
 
+/**
+ * plugin 的 schema 以及当前已存储的 config 值
+ */
 export interface PluginConfig {
+  /**
+   * plugin 为其 config 声明的 JSON Schema
+   */
   schema: AnySchemaObject;
+
+  /**
+   * 服务端返回的已存储 theme/config 值
+   */
   config: Record<string, unknown>;
 }
 
+/**
+ * 按 schema 属性名索引的 plugin config 值
+ */
 export type ConfigValues = Record<string, unknown>;
 
-// `x-hysilens-*` annotations are UI metadata, so unknown keywords must not fail compilation.
-// `allErrors` lets one pass find every invalid field instead of stopping at the first.
+/*
+ * `x-hysilens-*` 注解属于 UI 元数据，因此未知关键字不能让编译失败
+ * `allErrors` 让一次校验找出所有非法字段，而不是遇到第一个就停
+ */
 const lenient = new Ajv2020({
   strict: false,
   useDefaults: true,
@@ -94,8 +137,8 @@ function asObject(value: unknown): ConfigValues {
 }
 
 /**
- * Configuration handed to a running plugin: unknown keys are dropped and invalid values fall
- * back to their schema defaults, so a stale file never blanks the overlay.
+ * 交给运行中 plugin 的配置：未知键会被丢弃，非法值回退到 schema 默认值
+ * 因此过期的配置文件不会让 overlay 变成空白
  */
 export function loadConfig(plugin: PluginManifest, value: unknown): ConfigValues {
   const validate = validator(lenient, 'load', plugin);
@@ -106,7 +149,7 @@ export function loadConfig(plugin: PluginManifest, value: unknown): ConfigValues
   }
 
   for (const error of validate.errors ?? []) {
-    // Top-level JSON Pointer segment, unescaped per RFC 6901.
+    /* 顶层 JSON Pointer 片段，按 RFC 6901 反转义 */
     const field = error.instancePath.split('/')[1]?.replaceAll('~1', '/').replaceAll('~0', '~');
 
     if (field) {
@@ -121,7 +164,9 @@ export function loadConfig(plugin: PluginManifest, value: unknown): ConfigValues
   return config;
 }
 
-/** Configuration about to be saved: reported exactly as entered, defaults filled in. */
+/**
+ * 即将保存的配置：按输入原样上报，并补全默认值
+ */
 export function checkConfig(plugin: PluginManifest, value: unknown): ConfigValues {
   const validate = validator(exact, 'save', plugin);
   const config = asObject(value);

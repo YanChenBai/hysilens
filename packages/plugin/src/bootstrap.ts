@@ -2,8 +2,8 @@ import { isConnectMessage, WAITING_KIND } from './protocol';
 import { isPlugin, runPlugin } from './runtime';
 
 /**
- * Entry injected by the build around the plugin's default export. Waits for the host's port,
- * then drives the plugin. Announces itself so a host that missed `load` can still connect.
+ * 由构建过程注入到 plugin 默认导出外层的入口
+ * 等待 host 的 port 后驱动 plugin；同时主动广播自身，让错过 `load` 的 host 仍能连接
  */
 export function start(plugin: unknown): void {
   if (!isPlugin(plugin)) {

@@ -1,3 +1,11 @@
+//! 酷狗 adapter
+//!
+//! session 来自系统媒体传输控制（SMTC）；只读内存读取器附着在 `KuGou.exe` 或
+//! `KuGouMusic.exe` 上，用毫秒级时间轴与用于匹配缓存 KRC 歌词的队列标识细化 session
+//!
+//! 采样失败后会放弃内存访问，并且最多每两秒重试一次；期间 SMTC 状态继续发布，缓存歌词由
+//! [`catalog`] 解析，不接触播放器进程
+
 pub mod catalog;
 #[cfg(windows)]
 mod identity;
@@ -15,18 +23,25 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-/// Read-only identity from the current KuGou queue entry, independent of SMTC text.
+/// 从当前 KuGou 队列条目读取的只读标识，不依赖 SMTC 文本
 #[cfg(windows)]
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct KugouIdentity {
     pub queue_item_id: i32,
+
     pub source_type: i32,
+
     pub list_id: i32,
+
     pub source_song_id: i32,
+
     pub music_file_hash: String,
+
     pub last_played_music_hash: String,
+
     pub mix_song_id: u64,
+
     pub recommend_krc_id: u32,
 }
 
@@ -57,6 +72,7 @@ impl KugouIdentity {
     }
 }
 
+/// KuGou 的静态 descriptor，歌词与本地 KRC cache 匹配
 pub const DESCRIPTOR: Descriptor = Descriptor {
     source: Source::Kugou,
     session_id: "kugou",
@@ -64,6 +80,7 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     resolve_cache: Some(catalog::resolve),
 };
 
+/// 创建 KuGou adapter 工厂，并为 `cache` 启动后台 KRC cache 扫描器
 pub fn registration(cache: PathBuf) -> Registration {
     Registration {
         descriptor: DESCRIPTOR,
@@ -75,18 +92,45 @@ pub fn registration(cache: PathBuf) -> Registration {
     }
 }
 
+/// KuGou adapter 状态
+///
+/// session 来自 SMTC probe，可选的内存读取器补充毫秒级进度、时长和歌词匹配所用的队列标识；
+/// 失败后按需重新附着
 pub struct Probe {
     origin: Instant,
+
     media: anyhow::Result<super::qq_music::Probe>,
+
     #[cfg(windows)]
     memory: Option<memory::Reader>,
+
     previous: Option<(String, String, Option<String>, f64, Instant)>,
+
     last_attach: Option<Instant>,
+
     #[cfg(windows)]
     attach_error: Option<String>,
 }
 
+impl std::fmt::Debug for Probe {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = formatter.debug_struct("Probe");
+
+        debug.field("origin", &self.origin);
+        debug.field("media_ready", &self.media.is_ok());
+
+        #[cfg(windows)]
+        {
+            debug.field("memory_attached", &self.memory.is_some());
+            debug.field("attach_error", &self.attach_error);
+        }
+
+        debug.finish_non_exhaustive()
+    }
+}
+
 impl Probe {
+    /// 创建 adapter，并将 `server_ms` 的原点设为 `origin`
     pub fn new(origin: Instant) -> Self {
         Self {
             origin,
@@ -100,6 +144,10 @@ impl Probe {
         }
     }
 
+    /// 轮询一次 SMTC，存在 KuGou session 时附着到播放器进程
+    ///
+    /// 失败后内存读取器最多每两秒重试一次，时间轴读取失败时，session 保留其 SMTC 状态并上报
+    /// 内存错误
     pub fn sample(&mut self) -> Playback {
         let mut playback = match &self.media {
             Ok(probe) => probe.sample(),
@@ -114,6 +162,7 @@ impl Probe {
         playback
             .sessions
             .retain(|session| session.source_id.eq_ignore_ascii_case("kugou"));
+
         let Some(session) = playback.sessions.first_mut() else {
             #[cfg(windows)]
             {
@@ -122,6 +171,7 @@ impl Probe {
             }
             self.previous = None;
             self.last_attach = None;
+
             return playback;
         };
         #[cfg(windows)]
@@ -132,6 +182,7 @@ impl Probe {
                     .is_none_or(|last| last.elapsed().as_secs() >= 2)
             {
                 self.last_attach = Some(Instant::now());
+
                 match memory::Reader::attach() {
                     Ok(reader) => {
                         self.memory = Some(reader);
@@ -159,10 +210,11 @@ impl Probe {
         if let Some(reader) = &self.memory
             && let Ok(identity) = reader.identity()
         {
-            // 身份失败由专用诊断报告记录，继续使用现有缓存匹配。
+            // 身份失败由专用诊断报告记录，继续使用现有缓存匹配
             session.track_id = Some(identity.track_id());
             session.lyric_match = Some(identity.lyric_match());
         }
+
         match timeline {
             Ok((position, duration)) => {
                 let now = Instant::now();
@@ -204,9 +256,9 @@ impl Probe {
 }
 
 fn apply_timeline(session: &mut Session, position: f64, duration: Option<f64>, normal: bool) {
-    // 时长链可能读错堆对象字段，而独立的 kgplayer.dll 进度仍正常推进。
+    // 时长链可能读错堆对象字段，而独立的 kgplayer.dll 进度仍正常推进
     // 缺少时长不是播放错误：发布真实进度、清除旧歌时长，不拿错误时长截断进度；
-    // 连续进度采样仍可确认正常播放速率，时长链恢复后下一帧直接补回时长。
+    // 连续进度采样仍可确认正常播放速率，时长链恢复后下一帧直接补回时长
     session.position_ms = Some(position);
     session.source_position_ms = Some(position);
     session.duration_ms = duration;

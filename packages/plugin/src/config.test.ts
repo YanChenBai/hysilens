@@ -26,6 +26,7 @@ describe('defineConfig', () => {
 
     expect(config.entry).toBe('src/index.ts');
     expect(config.features).toEqual({});
+
     expect(config.configSchema).toMatchObject({
       type: 'object',
       additionalProperties: false,
@@ -49,6 +50,7 @@ describe('defineConfig', () => {
         label: { type: 'string', maxLength: 200, default: '题' },
       },
     });
+
     expect(config.configSchema).not.toHaveProperty('required');
     expect(config.configSchema.properties).not.toHaveProperty('size.multipleOf');
     expect(config.configSchema.properties).not.toHaveProperty('shadow.description');
@@ -67,6 +69,7 @@ describe('defineConfig', () => {
     });
 
     const properties = config.configSchema.properties as Record<string, Record<string, unknown>>;
+
     expect(Object.keys(properties).sort()).toEqual([
       'fontFamily',
       'revealMode',
@@ -149,17 +152,22 @@ describe('types', () => {
 
     expectTypeOf<ConfigOf<typeof config>>().toEqualTypeOf<{
       size: number;
+
       weight: 'light' | 'bold';
+
       shadow: boolean;
+
       fontFamily: string;
+
       revealMode: 'word' | 'line';
+
       translation: boolean;
     }>();
 
     definePlugin<typeof config>({
       setup({ config: current }) {
         expectTypeOf(current().weight).toEqualTypeOf<'light' | 'bold'>();
-        // @ts-expect-error scale is applied by the host and hidden from plugins
+        // @ts-expect-error scale 由 host 应用，对 plugin 隐藏
         void current().scale;
       },
     });

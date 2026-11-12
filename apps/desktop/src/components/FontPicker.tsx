@@ -5,12 +5,27 @@ import { Check, ChevronDown } from 'lucide-react';
 import { getJson } from '../lib/api';
 
 interface Props {
+  /**
+   * 输入框 id，便于外层 `Label` 引用
+   */
   id: string;
+
+  /**
+   * 当前字体族名称
+   */
   value: string;
+
+  /**
+   * plugin 声明但本机可能未安装的字体；会合并到选项里并排在系统字体列表之前
+   */
   extraFonts: string[];
+
   onChange: (value: string) => void;
 }
 
+/**
+ * 可搜索的字体族选择器，数据来自 host 已安装的字体列表
+ */
 export function FontPicker({ id, value, extraFonts, onChange }: Props) {
   const fonts = useQuery({
     queryKey: ['system-fonts'],

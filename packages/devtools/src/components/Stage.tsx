@@ -5,12 +5,40 @@ import type { RefObject } from 'react';
 
 import { IconButton } from './IconButton';
 
+/**
+ * plugin 背后的棋盘格或纯色背景，模拟 OBS 场景背景
+ */
 export type StageBackground = 'checker' | 'dark' | 'light';
+
+interface StageProps {
+  frame: RefObject<HTMLIFrameElement | null>;
+
+  src: string;
+
+  title: string;
+
+  /**
+   * plugin 声明的 viewport，单位为 CSS 像素
+   */
+  viewport: PluginViewport;
+
+  /**
+   * host 侧的 `scale` feature 值，像真实 host 一样叠加在适配缩放之上
+   */
+  pluginScale: number;
+
+  background: StageBackground;
+
+  onBackground: (value: StageBackground) => void;
+}
 
 const BACKGROUNDS: Array<{
   value: StageBackground;
+
   label: string;
+
   icon: typeof Grid;
+
   color: string;
 }> = [
   { value: 'checker', label: '透明（OBS 合成效果）', icon: Grid, color: '#94a3b8' },
@@ -42,7 +70,9 @@ function useSize(element: RefObject<HTMLElement | null>) {
   return size;
 }
 
-/** The plugin at its declared viewport, scaled to fit, as OBS would composite it. */
+/**
+ * 按声明 viewport 渲染并缩放适配后的 plugin，效果类似 OBS 合成
+ */
 export function Stage({
   frame,
   src,
@@ -51,16 +81,7 @@ export function Stage({
   pluginScale,
   background,
   onBackground,
-}: {
-  frame: RefObject<HTMLIFrameElement | null>;
-  src: string;
-  title: string;
-  viewport: PluginViewport;
-  /** Host-side `scale` feature value, applied on top of the fit like the real host does. */
-  pluginScale: number;
-  background: StageBackground;
-  onBackground: (value: StageBackground) => void;
-}) {
+}: StageProps) {
   const area = useRef<HTMLDivElement>(null);
   const size = useSize(area);
   const padding = 48;
@@ -83,7 +104,7 @@ export function Stage({
           className="relative overflow-hidden outline-1 outline-white/20 outline-dashed"
           style={{ width: viewport.width * zoom, height: viewport.height * zoom }}
         >
-          {/* Mirrors the host's canvas scaling: centred, clipped to the viewport. */}
+          {/* 与 host 的 canvas 缩放一致：居中并裁剪到 viewport */}
           <div className="absolute inset-0" style={{ transform: `scale(${pluginScale})` }}>
             <iframe
               ref={frame}
@@ -95,8 +116,11 @@ export function Stage({
                 width: viewport.width,
                 height: viewport.height,
                 transform: `scale(${zoom})`,
-                // Must match the plugin page's scheme, or the browser paints an opaque canvas
-                // behind the frame and transparency is lost.
+
+                /*
+                 * 必须与 plugin 页面的配色方案一致，否则浏览器会在 frame 背后
+                 * 绘制不透明画布，导致透明失效
+                 */
                 colorScheme: 'light',
               }}
             />

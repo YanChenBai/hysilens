@@ -11,20 +11,40 @@ import { clockAnchor, isRunning } from './transport';
 import type { Transport } from './transport';
 
 export interface LogEntry {
+  /**
+   * 作为 React key 的单调递增 id
+   */
   id: number;
+
+  /**
+   * 记录该条目时的墙上时间
+   */
   at: Date;
+
   level: 'info' | 'warn' | 'error';
+
   message: string;
 }
 
+/**
+ * devtools 推送给 plugin host 的全部内容；每次 render 都是新对象
+ */
 interface Inputs {
   config: ConfigValues;
+
   lyrics: LyricDocument | null;
+
   transport: Transport;
+
+  /**
+   * host 是否应把 overlay 视为对播放器可见
+   */
   visible: boolean;
 }
 
-/** Drift is checked often so seeks and speed changes reach the plugin within a frame or two. */
+/**
+ * 频繁检查 drift，让 seek 和速度变化能在一两帧内到达 plugin
+ */
 const SYNC_INTERVAL_MS = 100;
 
 function playbackOf({ transport, visible }: Inputs) {
@@ -32,9 +52,9 @@ function playbackOf({ transport, visible }: Inputs) {
 }
 
 /**
- * One PluginHost per plugin document. Every page load (including Vite full reloads after a code
- * change) announces itself with `waiting`, so the host is recreated for each new document
- * instead of staying bound to a page that no longer exists.
+ * 每个 plugin 文档对应一个 PluginHost，每次页面加载（包括改代码后 Vite 的整页重载）
+ * 都会用 `waiting` 宣告自己，因此 host 会为每个新文档重新创建，
+ * 而不是继续绑定到已经不存在的页面
  */
 export function usePluginHost(frame: RefObject<HTMLIFrameElement | null>, inputs: Inputs) {
   const [status, setStatus] = useState<HostStatus>({ phase: 'idle' });
@@ -118,7 +138,7 @@ export function usePluginHost(frame: RefObject<HTMLIFrameElement | null>, inputs
 
   const { transport, visible } = inputs;
 
-  // Seeks, pauses and speed changes take effect at once rather than on the next tick.
+  /* seek、暂停和速度变化立即生效，而不是等到下一个 tick */
   useEffect(() => {
     const now = performance.now();
     host.current?.syncClock(clockAnchor(transport, now));

@@ -6,7 +6,7 @@ import type { WithClassName } from '../types';
 export type TabsProps = WithClassName<BaseTabs.Root.Props>;
 
 /**
- * 支持键盘导航的标签页；TabsList 内置随选中项滑动的指示背景。
+ * 支持键盘导航的标签页；`TabsList` 内置随选中项滑动的指示背景
  * @example
  * ```tsx
  * <Tabs defaultValue="overview">
@@ -33,7 +33,9 @@ export function Tabs({ className, ...props }: TabsProps) {
 }
 
 export type TabsListProps = WithClassName<BaseTabs.List.Props> & {
-  /** 覆盖标签页选中背景的样式类。 */
+  /**
+   * 覆盖标签页选中背景的样式类
+   */
   indicatorClassName?: string;
 };
 
@@ -72,7 +74,7 @@ export function TabsList({ className, indicatorClassName, children, ...props }: 
 export type TabsTriggerProps = WithClassName<BaseTabs.Tab.Props>;
 
 /**
- * 标签页按钮，value 对应内容面板
+ * 标签页按钮，`value` 对应内容面板
  * @example
  * ```tsx
  * <TabsTrigger value="overview">概览</TabsTrigger>

@@ -3,6 +3,11 @@ import { Copy } from 'kubai-icons-react';
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+/**
+ * 把 OBS 浏览器源地址复制到剪贴板，并短暂显示确认状态
+ *
+ * @param url 要复制的 overlay 绝对地址
+ */
 export function CopySourceButton({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');

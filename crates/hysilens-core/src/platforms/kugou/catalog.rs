@@ -1,23 +1,39 @@
+//! KRC cache 扫描与匹配
+//!
+//! cache 文件名编码了歌手、标题、audio hash 和歌词 id，因此即使 SMTC 标题很粗糙，
+//! 也能按内存身份匹配到文档
+
 use super::lyrics;
 use crate::model::{Catalog, Entry, Session};
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path, sync::Arc};
 
+/// 把 `path` 下每个 `*.krc` 文件加载为 catalog，按文件名排序
+///
+/// 单个文件解码失败会记录进 [`Catalog::issues`]，而不是中止扫描
+///
+/// # Errors
+///
+/// 目录本身无法列出时返回错误
 pub fn read(path: &Path) -> anyhow::Result<Catalog> {
     let mut catalog = Catalog::default();
+
     for entry in fs::read_dir(path)? {
         let path = entry?.path();
+
         if !path
             .extension()
             .is_some_and(|value| value.eq_ignore_ascii_case("krc"))
         {
             continue;
         }
+
         let filename = path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
+
         match lyrics::load_document(&path) {
             Ok(document) => catalog.entries.push(Entry {
                 key: format!("{:x}", Sha256::digest(filename.as_bytes())),
@@ -34,9 +50,15 @@ pub fn read(path: &Path) -> anyhow::Result<Catalog> {
     catalog
         .entries
         .sort_by(|left, right| left.filename.cmp(&right.filename));
+
     Ok(catalog)
 }
 
+/// 把 session 与 KRC cache 匹配
+///
+/// 内存身份（`session.lyric_match`，即 reader 提供了有效 audio hash 时）优先于 SMTC 文本；
+/// 手动 `key` 覆盖两者；cache 存在歧义时不返回文档，并给出 `ambiguous` 状态，
+/// 以便客户端请求手动选择
 pub fn resolve(
     catalog: &Catalog,
     session: &Session,
@@ -49,19 +71,22 @@ pub fn resolve(
     {
         return resolve_memory(catalog, identity, key);
     }
+
     let candidates: Vec<_> = catalog
         .entries
         .iter()
         .filter(|entry| matches_title(entry, session))
         .cloned()
         .collect();
+
     let manual = key.and_then(|key| catalog.entries.iter().find(|entry| entry.key == key));
     let eligible: Vec<_> = candidates
         .iter()
         .filter(|entry| matches(entry, session))
         .collect();
-    // 完整歌词元数据优先于文件名回退，避免旧缓存遮住当前客户端发布的版本。
-    // 同一级存在不同歌词内容时仍保留歧义，不按文件时间或排列顺序猜测。
+
+    // 完整歌词元数据优先于文件名回退，避免旧缓存遮住当前客户端发布的版本
+    // 同一级存在不同歌词内容时仍保留歧义，不按文件时间或排列顺序猜测
     let metadata: Vec<_> = eligible
         .iter()
         .copied()
@@ -70,21 +95,25 @@ pub fn resolve(
                 && artists(&entry.artist) == artists(&session.artist)
         })
         .collect();
+
     let preferred = if metadata.is_empty() {
         &eligible
     } else {
         &metadata
     };
+
     let automatic = preferred.first().copied().filter(|first| {
         preferred
             .iter()
             .all(|entry| entry.document.id == first.document.id)
     });
-    // 歌手缺失时仅接受一个完整文件名候选，且歌词时间轴必须落在真实播放范围内。
-    // 不继承上一首的歌手，也不在多个同名歌曲之间猜测。
+
+    // 歌手缺失时仅接受一个完整文件名候选，且歌词时间轴必须落在真实播放范围内
+    // 不继承上一首的歌手，也不在多个同名歌曲之间猜测
     let title_only = (session.artist.trim().is_empty() && candidates.len() == 1)
         .then(|| &candidates[0])
         .filter(|entry| matches_without_artist(entry, session));
+
     let selected = manual.or(automatic).or(title_only);
     let status = if manual.is_some() {
         "manual"
@@ -125,8 +154,7 @@ fn resolve_memory(
     identity: &crate::model::LyricMatch,
     key: Option<&str>,
 ) -> super::super::CatalogResolution {
-    // Identity is stronger than SMTC text. A missing hash match must not fall through
-    // to a same-title cache belonging to a different recording/version.
+    // 身份比 SMTC 文本更强；缺失 hash 匹配时不能退回到同名但属于不同录音/版本的 cache
     let candidates: Vec<_> = catalog
         .entries
         .iter()
@@ -141,9 +169,11 @@ fn resolve_memory(
         })
         .cloned()
         .collect();
+
     let manual = key.and_then(|key| catalog.entries.iter().find(|entry| entry.key == key));
-    // Recommended IDs have collided across unrelated songs in real reports. Apply
-    // this preference only AFTER constraining candidates by the current audio hash.
+
+    // 实际报告中推荐 ID 曾在无关歌曲之间撞车；只有在用当前 audio hash 约束过候选之后
+    // 才能应用这一偏好
     let recommended: Vec<_> = candidates
         .iter()
         .filter(|entry| {
@@ -156,16 +186,19 @@ fn resolve_memory(
                 })
         })
         .collect();
+
     let preferred = if recommended.is_empty() {
         candidates.iter().collect::<Vec<_>>()
     } else {
         recommended
     };
+
     let automatic = preferred.first().copied().filter(|first| {
         preferred
             .iter()
             .all(|entry| entry.document.id == first.document.id)
     });
+
     let document = manual.or(automatic).map(|entry| entry.document.clone());
     let status = if manual.is_some() {
         "manual"
@@ -187,17 +220,20 @@ fn matches(entry: &Entry, session: &Session) -> bool {
     if session.title.trim().is_empty() || session.artist.trim().is_empty() {
         return false;
     }
+
     if !entry.album.is_empty()
         && !session.album.is_empty()
         && normalized(&entry.album) != normalized(&session.album)
     {
         return false;
     }
+
     if normalized(&entry.title) == normalized(&session.title)
         && matches_artists(&entry.artist, &session.artist)
     {
         return true;
     }
+
     let Some((artist, title)) = filename_identity(&entry.filename) else {
         return false;
     };
@@ -209,12 +245,14 @@ fn matches_without_artist(entry: &Entry, session: &Session) -> bool {
     let Some((artist, title)) = filename_identity(&entry.filename) else {
         return false;
     };
+
     let Some(duration) = session
         .duration_ms
         .filter(|value| value.is_finite() && *value > 0.0)
     else {
         return false;
     };
+
     if artist.trim().is_empty()
         || filename_text(title) != filename_text(&session.title)
         || (!entry.album.is_empty()
@@ -223,6 +261,7 @@ fn matches_without_artist(entry: &Entry, session: &Session) -> bool {
     {
         return false;
     }
+
     let Some(original) = entry
         .document
         .tracks
@@ -257,8 +296,9 @@ fn matches_artists(cached: &str, media: &str) -> bool {
     if artists(cached) == artists(media) {
         return true;
     }
-    // 实测酷狗 SMTC 对合唱只发布首位歌手。仅单歌手媒体允许匹配缓存的首位，
-    // 最终仍必须通过完整标题与唯一歌词内容校验；不匹配任意一位参与歌手。
+
+    // 实测酷狗 SMTC 对合唱只发布首位歌手；仅单歌手媒体允许匹配缓存的首位，
+    // 最终仍必须通过完整标题与唯一歌词内容校验；不匹配任意一位参与歌手
     let reported = artists(media);
     reported.len() == 1
         && !reported[0].is_empty()
@@ -277,6 +317,7 @@ fn cache_fields(filename: &str) -> Option<(&str, &str, u64)> {
     let (stem, flags) = stem.rsplit_once('-')?;
     let (stem, id) = stem.rsplit_once('-')?;
     let (stem, hash) = stem.rsplit_once('-')?;
+
     if flags.len() != 8
         || !flags.bytes().all(|value| value.is_ascii_hexdigit())
         || id.is_empty()
@@ -298,7 +339,7 @@ fn normalized(value: &str) -> String {
 }
 
 fn filename_text(value: &str) -> String {
-    // 酷狗文件名会删除斜杠等不可用字符；保留版本后缀与标点，不做歌名截短。
+    // 酷狗文件名会删除斜杠等不可用字符；保留版本后缀与标点，不做歌名截短
     value
         .chars()
         .filter(|value| {
@@ -310,7 +351,7 @@ fn filename_text(value: &str) -> String {
 }
 
 fn artists(value: &str) -> Vec<String> {
-    // 下划线可以属于艺名（如马也_Crabbit），不能当作多歌手分隔符。
+    // 下划线可以属于艺名（如马也_Crabbit），不能当作多歌手分隔符
     let mut artists: Vec<_> = value
         .split(['/', '、', '&', ';', '；', ','])
         .map(normalized)
@@ -362,12 +403,14 @@ mod tests {
                 tokens: vec![],
             }],
         }];
+
         let mut session = Session {
             title: "難破船 (难破船)".into(),
             artist: String::new(),
             duration_ms: Some(264000.0),
             ..Default::default()
         };
+
         let mut catalog = Catalog {
             entries: vec![entry.clone()],
             issues: vec![],
@@ -392,10 +435,12 @@ mod tests {
     fn uses_only_the_first_artist_when_smtc_omits_collaborators() {
         let mut entry = entry();
         entry.filename = "李佳薇、张新成 - 甲乙丙丁 (合唱版)-97b4c8a5a50bbd7d39740bf627c660b1-814619243-00000000.krc".into();
+
         let catalog = Catalog {
             entries: vec![entry],
             issues: vec![],
         };
+
         let mut session = Session {
             title: "甲乙丙丁 (合唱版)".into(),
             artist: "李佳薇".into(),
@@ -420,15 +465,18 @@ mod tests {
             artist: "松原みき".into(),
             ..Default::default()
         };
+
         let mut exact = fallback.clone();
         exact.key = "exact".into();
         exact.title = session.title.clone();
         exact.artist = session.artist.clone();
         Arc::make_mut(&mut exact.document).id = "exact-document".into();
+
         let mut catalog = Catalog {
             entries: vec![fallback, exact.clone()],
             issues: vec![],
         };
+
         let resolution = resolve(&catalog, &session, None);
         assert_eq!(resolution.status, "matchedMetadata");
         assert_eq!(resolution.document.unwrap().id, "exact-document");
@@ -449,10 +497,12 @@ mod tests {
         let mut second = first.clone();
         second.key = "other".into();
         Arc::make_mut(&mut second.document).id = "different".into();
+
         let catalog = Catalog {
             entries: vec![first, second],
             issues: vec![],
         };
+
         let session = Session {
             title: "真夜中のドア/Stay With Me (深夜门扉/留在我身边) (シングルver.)".into(),
             artist: "松原みき".into(),
@@ -480,9 +530,11 @@ mod tests {
             entries: vec![entry()],
             issues: vec![],
         };
+
         let result = resolve(&catalog, &identified_session(), None);
         assert_eq!(result.status, "matchedMemoryHash");
         assert_eq!(result.document.unwrap().id, "same");
+
         let mut session = identified_session();
         session.lyric_match.as_mut().unwrap().file_hashes[0] =
             session.lyric_match.as_ref().unwrap().file_hashes[1].to_uppercase();
@@ -497,16 +549,19 @@ mod tests {
         revision.key = "revision".into();
         revision.filename = revision.filename.replace("-213233970-", "-987-");
         Arc::make_mut(&mut revision.document).id = "revision".into();
+
         let mut wrong_song = first.clone();
         wrong_song.key = "wrong".into();
         wrong_song.filename = wrong_song
             .filename
             .replace("1e1898733bb33fbee0cd6edad4ac0deb", &"ff".repeat(16));
         Arc::make_mut(&mut wrong_song.document).id = "wrong".into();
+
         let mut catalog = Catalog {
             entries: vec![wrong_song, revision, first],
             issues: vec![],
         };
+
         let mut session = identified_session();
         assert_eq!(
             resolve(&catalog, &session, None).document.unwrap().id,
@@ -541,10 +596,12 @@ mod tests {
             artist: artist.into(),
             ..Default::default()
         };
+
         let catalog = Catalog {
             entries: vec![cached],
             issues: vec![],
         };
+
         let previous = resolve(&catalog, &session, None).status;
         session.lyric_match = Some(crate::model::LyricMatch {
             file_hashes: vec!["0".repeat(32)],

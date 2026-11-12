@@ -6,7 +6,7 @@ import type { WithClassName } from '../types';
 export type SwitchProps = WithClassName<BaseSwitch.Root.Props>;
 
 /**
- * 带滑块位移动画的开关。
+ * 带滑块位移动画的开关
  * @example
  * ```tsx
  * <Switch aria-label="接收通知" checked={enabled} onCheckedChange={setEnabled} />

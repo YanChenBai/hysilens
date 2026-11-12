@@ -1,6 +1,6 @@
 import { definePlugin } from '@hysilens/plugin';
 
-// Deliberate value import: the build must reject it.
+/* 故意使用值导入：构建必须拒绝 */
 import config from '../hysilens.config';
 
 export default definePlugin({

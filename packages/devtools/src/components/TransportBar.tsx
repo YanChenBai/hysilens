@@ -19,19 +19,37 @@ import { IconButton } from './IconButton';
 
 const RATES = ['0.25', '0.5', '0.75', '1', '1.25', '1.5', '2'];
 
+/**
+ * 模拟播放器的播放控制
+ */
+interface TransportBarProps {
+  /**
+   * 播放器状态；位置和时长以歌词毫秒为单位
+   */
+  transport: Transport;
+
+  onTransport: (next: Transport) => void;
+
+  /**
+   * 所选 sample 的歌词行，用于上一行/下一行跳转
+   */
+  lines: LyricLine[];
+
+  /**
+   * 作为 `playback.visible` 传给 plugin 的值，由眼睛按钮切换
+   */
+  visible: boolean;
+
+  onVisible: (visible: boolean) => void;
+}
+
 export function TransportBar({
   transport,
   onTransport,
   lines,
   visible,
   onVisible,
-}: {
-  transport: Transport;
-  onTransport: (next: Transport) => void;
-  lines: LyricLine[];
-  visible: boolean;
-  onVisible: (visible: boolean) => void;
-}) {
+}: TransportBarProps) {
   const now = useNow(transport.playing);
   const position = positionAt(transport, now);
   const running = isRunning(transport, now);

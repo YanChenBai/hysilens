@@ -5,7 +5,12 @@ import { useEffect } from 'react';
 import { acquireSession, onPluginEvent } from './session';
 import type { PluginEvent } from './session';
 
-/** Map a pushed notification to the queries it makes stale. */
+/**
+ * 把推送的通知映射到需要失效的 query
+ *
+ * @param queries 应用的 query client
+ * @param event 服务端推送；`pluginConfig` 只影响该 plugin，`resync` 则刷新所有 plugin query
+ */
 export function invalidatePluginQueries(queries: QueryClient, event: PluginEvent): void {
   switch (event.kind) {
     case 'plugins': {
@@ -29,8 +34,8 @@ export function invalidatePluginQueries(queries: QueryClient, event: PluginEvent
 }
 
 /**
- * Keep plugin queries current from server pushes instead of polling. Mount once near the root;
- * it holds the event socket open but does not re-render on playback updates.
+ * 通过服务端推送而不是轮询来保持 plugin query 最新，在根节点附近挂载一次
+ * 它会保持 event socket 打开，但不会因 playback 更新而重新渲染
  */
 export function usePluginSync(): void {
   const queries = useQueryClient();

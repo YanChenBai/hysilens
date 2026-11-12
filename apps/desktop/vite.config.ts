@@ -15,13 +15,13 @@ export default defineConfig({
   },
   run: {
     tasks: {
-      // Each bundled plugin builds itself; this copies the results into public/plugins.
+      /* 每个内置 plugin 自己构建；这里只负责把结果复制到 public/plugins */
       plugins: {
         dependsOn: ['@hysilens/renderer-scroll#build', '@hysilens/renderer-tilted#build'],
         command: 'vpx scripts/bundle-plugins.ts',
         cache: false,
       },
-      // Rust embeds this output, so it must exist before any cargo build or test.
+      /* Rust 会嵌入这份产物，所以任何 cargo build 或 test 之前都必须先生成 */
       'build:web': {
         dependsOn: ['plugins'],
         command: ['vp exec tsc --noEmit', 'vp build'],

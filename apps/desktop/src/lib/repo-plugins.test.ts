@@ -6,7 +6,9 @@ import scroll from '../../../../plugins/scroll/hysilens.config';
 import tilted from '../../../../plugins/tilted/hysilens.config';
 import { checkConfig, loadConfig } from './api';
 
-/** The host sees only the manifest, so test the bundled schemas through that same path. */
+/**
+ * host 只能看到 manifest，因此通过同一路径测试内置 schema
+ */
 function manifest(definition: ConfigDefinition<unknown>): PluginManifest {
   return {
     apiVersion: 1,
@@ -42,6 +44,7 @@ describe('repository plugin configs', () => {
     }
 
     const plugin = manifest(scroll);
+
     expect(plugin.features.scale).toBe(true);
     expect(loadConfig(plugin, {}).scale).toBe(1);
     expect(checkConfig(plugin, { scale: 1.15 }).scale).toBe(1.15);
@@ -55,6 +58,7 @@ describe('repository plugin configs', () => {
     }
 
     const plugin = manifest(scroll);
+
     rejects(plugin, { visibleLines: 2.5 });
     rejects(plugin, { visibleLines: 0 });
     expect(checkConfig(plugin, { visibleLines: 4 }).visibleLines).toBe(4);
@@ -62,6 +66,7 @@ describe('repository plugin configs', () => {
 
   it('exposes font, colors and line count for tilted while dropping old geometry and scale', () => {
     const plugin = manifest(tilted);
+
     expect(plugin.features.font).toBeUndefined();
 
     const saved = loadConfig(plugin, {

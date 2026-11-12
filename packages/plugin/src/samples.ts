@@ -1,31 +1,67 @@
 /**
- * Lyric documents for previews and `hysilens dev`. Together they cover the shapes renderers meet
- * in practice: per-character and per-word timing, secondary tracks, gaps, overlaps and
- * line-only timing.
+ * 供预览与 `hysilens dev` 使用的歌词文档
+ * 它们合计覆盖 renderer 实际会遇到的各种形态：逐字与逐词计时、副轨、空档、
+ * 重叠以及只有整行计时的情形
  */
 import type { LyricDocument, LyricLine, LyricToken } from './protocol';
 
+/**
+ * 带元数据的示例文档，元数据用于 devtools 选择器展示
+ */
 export interface LyricSample {
   id: string;
+
+  /**
+   * devtools 示例选择器中显示的名称
+   */
   name: string;
+
+  /**
+   * 该示例覆盖的情形，显示在名称旁边
+   */
   description: string;
+
   document: LyricDocument;
-  /** Playback length, including a short tail after the last line. */
+
+  /**
+   * 播放时长，包含最后一行之后的短暂收尾
+   */
   durationMs: number;
 }
 
-/** `chars`: graphemes share the line evenly; an array: `[text, ms]` words in order, `''` is a rest. */
+/**
+ * `chars`：字素平均分享该行时间；数组形式为按顺序的 `[text, ms]` 词，`''` 表示停顿
+ */
 type Timing = 'chars' | 'none' | Array<[string, number]>;
 
+/**
+ * 示例行，由 `sample` 展开成 token 并合并进三条 track
+ */
 interface SampleLine {
+  /**
+   * 在歌词时间线上的起点，单位 ms
+   */
   at: number;
+
   text: string;
-  /** Defaults to the sum of word durations, or 4 s for evenly timed lines. */
+
+  /**
+   * 默认为各词时长之和；均匀计时的行则为 4 s
+   */
   durationMs?: number;
+
+  /**
+   * 默认为 `chars`
+   */
   timing?: Timing;
+
   romanization?: string;
+
   translation?: string;
-  /** Leave the line open-ended, as some sources do. */
+
+  /**
+   * 让该行开放式结束，与某些来源的做法一致
+   */
   openEnded?: boolean;
 }
 
@@ -304,6 +340,12 @@ const edgeCases = sample(
   ],
 );
 
+/**
+ * 所有示例，按选择器顺序排列；id 唯一并作为选择 key
+ */
 export const samples: LyricSample[] = [chinese, english, japanese, edgeCases];
 
+/**
+ * devtools 示例选择器中的初始选中项
+ */
 export const defaultSample = chinese;

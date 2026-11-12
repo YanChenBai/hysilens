@@ -1,5 +1,5 @@
-//! On-demand, read-only diagnostics. Identity AOB scans executable module sections only.
-//! No full process dump is taken.
+//! 按需触发的只读诊断；身份 AOB 只扫描可执行 module section，不会执行完整进程 dump
+
 use super::*;
 use crate::platforms::qq_music;
 use serde_json::{Value, json};
@@ -31,8 +31,10 @@ impl Drop for DiagnosticMedia {
     fn drop(&mut self) {
         if let Some(probe) = self.0.take() {
             drop(probe);
-            // SAFETY: Probe::new initialized COM on this same blocking worker.
-            // Release it after the WinRT objects so later save dialogs can use STA.
+
+            // SAFETY: 配平 `Probe::new` 在同一 worker thread 上成功调用的 `CoInitializeEx`，
+            // 后者递增了线程的 COM 初始化计数（线程此前已初始化时为 `S_FALSE`）；probe 及其
+            // WinRT manager 已在上方 drop，因此没有 WinRT 对象存活到这次调用之后
             unsafe { windows::Win32::System::Com::CoUninitialize() };
         }
     }
@@ -41,6 +43,7 @@ impl Drop for DiagnosticMedia {
 fn application_info() -> anyhow::Result<Value> {
     let path = std::env::current_exe()?;
     let metadata = std::fs::metadata(&path)?;
+
     Ok(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "executablePath": path,
@@ -62,10 +65,11 @@ fn media_snapshot(probe: Option<&qq_music::Probe>) -> Value {
 }
 
 fn registry_string(key: PCWSTR, name: PCWSTR) -> anyhow::Result<String> {
-    // Values are bounded Windows/CPU descriptions, not arbitrary registry content.
+    // 取到的值是有长度上限的 Windows/CPU 描述，不是任意 registry 内容
     let mut buffer = [0u16; 1024];
     let mut length = size_of::<[u16; 1024]>() as u32;
-    // SAFETY: both registry names are static NUL-terminated strings and buffer is writable.
+
+    // SAFETY: 两个 registry 名称都是静态 NUL 结尾字符串，buffer 可写
     unsafe {
         RegGetValueW(
             HKEY_LOCAL_MACHINE,
@@ -78,6 +82,7 @@ fn registry_string(key: PCWSTR, name: PCWSTR) -> anyhow::Result<String> {
         )
         .ok()?;
     }
+
     Ok(text(&buffer))
 }
 
@@ -89,8 +94,13 @@ fn system_info() -> Value {
         dwLength: size_of::<MEMORYSTATUSEX>() as u32,
         ..Default::default()
     };
-    // SAFETY: both structures are valid output buffers, with required length initialized.
+
+    // SAFETY: `info` 是已完全初始化、可写的 SYSTEM_INFO 输出 buffer，
+    // GetNativeSystemInfo 不需要调用方提供大小
     unsafe { GetNativeSystemInfo(&mut info) };
+
+    // SAFETY: `memory` 是存活的 MEMORYSTATUSEX，`dwLength` 已设为自身大小，
+    // 调用只写入该 buffer
     let memory = unsafe { GlobalMemoryStatusEx(&mut memory) }
         .map(|()| {
             json!({
@@ -100,10 +110,12 @@ fn system_info() -> Value {
             })
         })
         .map_err(Into::into);
+
     let revision = (|| -> anyhow::Result<u32> {
         let mut revision = 0u32;
         let mut length = size_of::<u32>() as u32;
-        // SAFETY: DWORD value is read into a correctly sized, live output buffer.
+
+        // SAFETY: DWORD 值被读入大小正确且存活的输出 buffer
         unsafe {
             RegGetValueW(
                 HKEY_LOCAL_MACHINE,
@@ -116,6 +128,7 @@ fn system_info() -> Value {
             )
             .ok()?;
         }
+
         Ok(revision)
     })();
     json!({
@@ -134,7 +147,7 @@ fn system_info() -> Value {
             "logicalProcessorCount": std::thread::available_parallelism().map(|n| n.get()).ok(),
             "systemProcessorCount": info.dwNumberOfProcessors,
         },
-        // SAFETY: GetNativeSystemInfo initialized the architecture member of this union.
+        // SAFETY: GetNativeSystemInfo 已初始化该 union 的 architecture 成员
         "nativeArchitectureCode": unsafe { info.Anonymous.Anonymous.wProcessorArchitecture.0 },
         "pageSize": info.dwPageSize,
         "memory": result_value(memory),
@@ -159,36 +172,51 @@ fn sha256(path: &std::path::Path) -> anyhow::Result<String> {
     let mut reader = BufReader::new(File::open(path)?);
     let mut hash = Sha256::new();
     let mut buffer = [0; 64 * 1024];
+
     loop {
         let count = reader.read(&mut buffer)?;
+
         if count == 0 {
             break;
         }
         hash.update(&buffer[..count]);
     }
+
     Ok(format!("{:x}", hash.finalize()))
 }
 
 struct Module {
     name: String,
+
     base: usize,
+
     size: u32,
+
     version: Option<[u16; 4]>,
+
     report: Value,
 }
 
 fn modules(pid: u32) -> anyhow::Result<Vec<Module>> {
-    // SAFETY: Toolhelp owns the snapshot and writes into a correctly sized entry.
+    // SAFETY: CreateToolhelp32Snapshot 不接受 pointer，返回的 HANDLE 归 `Handle` 所有，
+    // 由其在 drop 时关闭
     let snapshot =
         Handle(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)? });
+
     let mut entry = MODULEENTRY32W {
         dwSize: size_of::<MODULEENTRY32W>() as u32,
         ..Default::default()
     };
+
+    // SAFETY: `entry` 是大小正确、`dwSize` 已初始化的 MODULEENTRY32W，snapshot 在整个枚举
+    // 期间保持打开
     unsafe { Module32FirstW(snapshot.0, &mut entry)? };
+
     let mut modules = Vec::new();
+
     loop {
         let name = text(&entry.szModule);
+
         if matches!(
             name.to_ascii_lowercase().as_str(),
             "kgplayer.dll" | "kugou.dll" | "kugou.exe" | "kugoumusic.exe"
@@ -198,6 +226,7 @@ fn modules(pid: u32) -> anyhow::Result<Vec<Module>> {
                 .iter()
                 .position(|c| *c == 0)
                 .unwrap_or(entry.szExePath.len());
+
             let path = PathBuf::from(std::ffi::OsString::from_wide(&entry.szExePath[..length]));
             let version = file_version(&entry.szExePath);
             let report = json!({
@@ -217,7 +246,8 @@ fn modules(pid: u32) -> anyhow::Result<Vec<Module>> {
                 report,
             });
         }
-        // SAFETY: snapshot and output entry remain valid throughout enumeration.
+
+        // SAFETY: snapshot 与输出 entry 在整个枚举期间均有效
         if let Err(error) = unsafe { Module32NextW(snapshot.0, &mut entry) } {
             ensure!(
                 error.code().0 as u32 == 0x80070012,
@@ -226,12 +256,14 @@ fn modules(pid: u32) -> anyhow::Result<Vec<Module>> {
             break;
         }
     }
+
     Ok(modules)
 }
 
 fn region(handle: HANDLE, address: usize) -> Value {
     let mut info = MEMORY_BASIC_INFORMATION::default();
-    // SAFETY: info is a valid output buffer; the OS validates the remote address.
+
+    // SAFETY: info 是有效的输出 buffer，远程地址由操作系统校验
     let count = unsafe {
         VirtualQueryEx(
             handle,
@@ -240,6 +272,7 @@ fn region(handle: HANDLE, address: usize) -> Value {
             size_of::<MEMORY_BASIC_INFORMATION>(),
         )
     };
+
     if count == 0 {
         return json!({ "error": windows::core::Error::from_thread().to_string() });
     }
@@ -256,24 +289,30 @@ fn region(handle: HANDLE, address: usize) -> Value {
 }
 
 fn nearby(handle: HANDLE, address: usize, info: &MEMORY_BASIC_INFORMATION) -> Value {
-    // Stay inside the queried region and avoid guard/no-access pages. This is a
-    // bounded context read around a known address, never a process-wide scan.
+    // 停留在已查询区域内并避开 guard/no-access page；这是围绕已知地址的有界上下文
+    // 读取，从不是全进程扫描
     if info.State.0 != 0x1000 || info.Protect.0 & (0x100 | 0x01) != 0 {
         return json!({ "skipped": "内存未提交或受保护" });
     }
+
     let start = address
         .saturating_sub(CONTEXT_BEFORE)
         .max(info.BaseAddress as usize);
+
     let end = address
         .saturating_add(CONTEXT_AFTER)
         .min((info.BaseAddress as usize).saturating_add(info.RegionSize));
+
     let length = end.saturating_sub(start);
+
     if length == 0 || length > CONTEXT_BEFORE + CONTEXT_AFTER {
         return json!({ "skipped": "内存区域范围无效" });
     }
+
     let mut bytes = vec![0u8; length];
     let mut count = 0;
-    // SAFETY: bytes has length writable bytes, and Windows checks the remote address.
+
+    // SAFETY: bytes 有 length 个可写字节，远程地址由 Windows 校验
     let result = unsafe {
         ReadProcessMemory(
             handle,
@@ -284,6 +323,7 @@ fn nearby(handle: HANDLE, address: usize, info: &MEMORY_BASIC_INFORMATION) -> Va
         )
     };
     bytes.truncate(count.min(length));
+
     let mut report = json!({
         "address": format!("{start:#x}"),
         "targetOffset": address.saturating_sub(start),
@@ -291,6 +331,7 @@ fn nearby(handle: HANDLE, address: usize, info: &MEMORY_BASIC_INFORMATION) -> Va
         "readBytes": bytes.len(),
         "bytesHex": bytes.iter().map(|b| format!("{b:02x}")).collect::<String>(),
     });
+
     if let Err(error) = result {
         report["error"] = json!(error.to_string());
     }
@@ -300,12 +341,14 @@ fn nearby(handle: HANDLE, address: usize, info: &MEMORY_BASIC_INFORMATION) -> Va
 fn read_value<const N: usize>(reader: &Reader, address: usize) -> (Value, anyhow::Result<[u8; N]>) {
     let result = reader.read(address);
     let mut report = json!({ "address": format!("{address:#x}"), "byteCount": N, "region": region(reader.handle.0, address) });
+
     match &result {
         Ok(bytes) => {
             report["bytesHex"] = json!(bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
         }
         Err(error) => {
             report["error"] = json!(format!("{error:#}"));
+
             if let Some(code) = error.chain().find_map(|cause| {
                 cause
                     .downcast_ref::<windows::core::Error>()
@@ -323,15 +366,18 @@ fn sample(reader: &Reader) -> Value {
     let layout = reader.layout;
     let (mut position_report, position) =
         read_value(reader, reader.position_base + layout.position_offset);
+
     let position = position.map(f64::from_le_bytes);
     let progress_usable = position
         .as_ref()
         .is_ok_and(|position| validate_position(*position).is_ok());
+
     if let Ok(value) = &position {
-        // JSON cannot represent NaN/Infinity; retain their textual form as well as raw bytes.
+        // JSON 无法表示 NaN/Infinity，因此除原始字节外还保留其文本形式
         position_report["rawSeconds"] = json!(value.to_string());
         position_report["seconds"] = json!(value);
     }
+
     let mut steps = Vec::new();
     let mut leaf_report = Value::Null;
     let duration = (|| -> anyhow::Result<f64> {
@@ -339,10 +385,12 @@ fn sample(reader: &Reader) -> Value {
             .duration_base
             .checked_add(layout.duration_offset)
             .context("时长入口溢出")?;
+
         for (index, offset) in layout.duration_chain.iter().enumerate() {
             let (mut step, pointer) = read_value(reader, address);
             step["index"] = json!(index);
             step["offset"] = json!(format!("{offset:#x}"));
+
             let next = pointer.and_then(|bytes| {
                 let pointer = u64::from_le_bytes(bytes);
                 step["pointer"] = json!(format!("{pointer:#x}"));
@@ -350,6 +398,7 @@ fn sample(reader: &Reader) -> Value {
                     .checked_add(*offset)
                     .context("酷狗指针溢出")
             });
+
             match &next {
                 Ok(next) => step["nextAddress"] = json!(format!("{next:#x}")),
                 Err(error) => step["error"] = json!(format!("{error:#}")),
@@ -357,8 +406,10 @@ fn sample(reader: &Reader) -> Value {
             steps.push(step);
             address = next?;
         }
+
         let (mut leaf, duration) = read_value(reader, address);
         let duration = duration.map(i32::from_le_bytes);
+
         if let Ok(raw) = &duration {
             leaf["rawValue"] = json!(raw);
             leaf["seconds"] = json!(f64::from(*raw) / layout.duration_units_per_second);
@@ -366,6 +417,7 @@ fn sample(reader: &Reader) -> Value {
         leaf_report = leaf;
         duration.map(|raw| f64::from(raw) / layout.duration_units_per_second)
     })();
+
     let mut report = json!({
         "capturedUnixMs": timestamp(),
         "startedUnixMs": started,
@@ -374,6 +426,7 @@ fn sample(reader: &Reader) -> Value {
         "durationSteps": steps,
         "duration": leaf_report,
     });
+
     match duration {
         Ok(seconds) => {
             report["timeline"] =
@@ -387,14 +440,17 @@ fn sample(reader: &Reader) -> Value {
 fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
     let modules = modules(pid)?;
     let mut report = json!({ "modules": modules.iter().map(|m| &m.report).collect::<Vec<_>>() });
-    // Query permission is only needed for region/architecture diagnostics. Preserve
-    // readable samples even if that extra permission is unavailable.
+
+    // 区域/架构诊断才需要 Query 权限，即使拿不到该额外权限，也要保留可读采样
+    // SAFETY: `pid` 来自 Toolhelp 枚举，该调用只返回一个拥有所有权的 handle，
+    // 不解引用任何 pointer
     let handle = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pid) };
     let handle = match handle {
         Ok(handle) => Handle(handle),
         Err(error) => {
             report["queryPermissionError"] = json!(error.to_string());
-            // SAFETY: read-only access to an enumerated PID; the returned handle is owned.
+
+            // SAFETY: 对已枚举的 PID 做只读访问，返回的 handle 拥有所有权
             match unsafe { OpenProcess(PROCESS_VM_READ, false, pid) } {
                 Ok(handle) => Handle(handle),
                 Err(error) => {
@@ -404,12 +460,15 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
             }
         }
     };
+
     let mut machine = IMAGE_FILE_MACHINE::default();
     let mut native = IMAGE_FILE_MACHINE::default();
-    // SAFETY: handle is live and both machine values are valid output buffers.
+
+    // SAFETY: handle 存活，两个 machine 值都是有效的输出 buffer
     report["architecture"] = result_value(unsafe {
         IsWow64Process2(handle.0, &mut machine, Some(&mut native))
     }.map(|()| json!({ "processMachine": format!("{:#x}", machine.0), "nativeMachine": format!("{:#x}", native.0) })).map_err(Into::into));
+
     let find = |name: &str| modules.iter().find(|m| m.name.eq_ignore_ascii_case(name));
     let prepare = || -> anyhow::Result<_> {
         let position = find("kgplayer.dll").context("缺少 kgplayer.dll")?;
@@ -418,8 +477,10 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
             position.version.context("无法获取 kgplayer.dll 版本")?,
             duration.version.context("无法获取 kugou.dll 版本")?,
         )?;
+
         Ok((position, duration, layouts))
     };
+
     match prepare() {
         Ok((position, duration, layouts)) => {
             let mut reader = Reader {
@@ -435,17 +496,22 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
                 Ok(entry) => json!({"value":entry}),
                 Err(error) => json!({"error":error}),
             };
+
             let mut captures = Vec::new();
             let origin = Instant::now();
+
             for index in 0..SAMPLE_COUNT {
                 if index > 0 {
                     std::thread::sleep(SAMPLE_INTERVAL);
                 }
+
                 let started = timestamp();
                 let media_before = media_snapshot(media);
                 let mut attempts = Vec::new();
+
                 for (priority, layout) in layouts.iter().enumerate() {
                     reader.layout = *layout;
+
                     let mut attempt = sample(&reader);
                     attempt["layout"] = json!({
                         "priority": priority,
@@ -458,6 +524,7 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
                     });
                     attempts.push(attempt);
                 }
+
                 let selected = attempts
                     .iter()
                     .position(|attempt| attempt["timeline"]["value"].is_array());
@@ -477,24 +544,34 @@ fn process(pid: u32, media: Option<&qq_music::Probe>) -> anyhow::Result<Value> {
         }
         Err(error) => report["error"] = json!(format!("{error:#}")),
     }
+
     Ok(report)
 }
 
 fn processes(media: Option<&qq_music::Probe>) -> anyhow::Result<Vec<Value>> {
-    // SAFETY: the owned snapshot and correctly sized entry are valid for Toolhelp.
+    // SAFETY: CreateToolhelp32Snapshot 不接受 pointer，返回的 HANDLE 归 `Handle` 所有，
+    // 由其在 drop 时关闭
     let snapshot = Handle(unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)? });
     let mut entry = PROCESSENTRY32W {
         dwSize: size_of::<PROCESSENTRY32W>() as u32,
         ..Default::default()
     };
+
+    // SAFETY: `entry` 是大小正确、`dwSize` 已初始化的 PROCESSENTRY32W，snapshot 在整个
+    // 枚举期间保持打开
     unsafe { Process32FirstW(snapshot.0, &mut entry)? };
-    // Enumerate before sampling so process churn during the delays cannot hide candidates.
+
+    // 先枚举再采样，避免延迟期间的进程变动隐藏候选
     let mut candidates = Vec::new();
+
     loop {
         let name = text(&entry.szExeFile);
+
         if name.eq_ignore_ascii_case("KuGou.exe") || name.eq_ignore_ascii_case("KuGouMusic.exe") {
             candidates.push((entry.th32ProcessID, name));
         }
+
+        // SAFETY: 在同一个存活的 snapshot 上继续遍历，`entry` 保持其 `dwSize`
         if let Err(error) = unsafe { Process32NextW(snapshot.0, &mut entry) } {
             ensure!(
                 error.code().0 as u32 == 0x80070012,
@@ -503,6 +580,7 @@ fn processes(media: Option<&qq_music::Probe>) -> anyhow::Result<Vec<Value>> {
             break;
         }
     }
+
     Ok(candidates
         .into_iter()
         .map(|(pid, name)| {
@@ -515,9 +593,15 @@ fn processes(media: Option<&qq_music::Probe>) -> anyhow::Result<Vec<Value>> {
         .collect())
 }
 
+/// 构建运行中 KuGou 进程的诊断 snapshot
+///
+/// 在调用方的 blocking thread 上运行：WinRT probe 在该线程创建并释放，报告包含应用、系统、
+/// module 与多次时间轴采样；缺失的 module、权限失败和读取错误会写入返回的 JSON，
+/// 而不是中止报告
 pub fn report() -> Value {
     let started = timestamp();
-    // Construct and use WinRT objects on this same blocking worker thread.
+
+    // 在同一个 blocking worker thread 上创建并使用 WinRT 对象
     let media = qq_music::Probe::new(Instant::now());
     let media_error = media.as_ref().err().map(|error| format!("{error:#}"));
     let media = DiagnosticMedia(media.ok());
@@ -536,9 +620,11 @@ pub fn report() -> Value {
         "contextBytesBefore": CONTEXT_BEFORE,
         "contextBytesAfter": CONTEXT_AFTER,
     });
+
     if let Some(error) = media_error {
         report["mediaError"] = json!(error);
     }
+
     match processes(media.0.as_ref()) {
         Ok(processes) => {
             if processes.is_empty() {
@@ -560,7 +646,7 @@ mod tests {
     fn reader(position: &f64, root: &u64, chain: &'static [usize]) -> Reader {
         Reader {
             identity_entry: Err("test".into()),
-            // SAFETY: tests only read their own live buffers using a read/query-only handle.
+            // SAFETY: 测试只用只读/查询权限的 handle 读取自身存活的 buffer
             handle: Handle(unsafe {
                 OpenProcess(
                     PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
@@ -607,6 +693,7 @@ mod tests {
         let report = sample(&reader(&position, &root, &[0, 0]));
         assert_eq!(report["position"]["seconds"], position);
         assert_eq!(report["durationSteps"].as_array().unwrap().len(), 2);
+
         let failed = &report["durationSteps"][1];
         assert_eq!(failed["address"], "0x0");
         assert!(failed["error"].is_string());
@@ -635,6 +722,7 @@ mod tests {
         let report = sample(&reader(&position, &root, &[0]));
         assert_eq!(report["timeline"]["value"], json!([21500.0, 209000.0]));
         assert_eq!(report["duration"]["bytesHex"], "68300300");
+
         let nearby = &report["duration"]["region"]["nearby"];
         let count = nearby["readBytes"].as_u64().unwrap() as usize;
         let offset = nearby["targetOffset"].as_u64().unwrap() as usize;
@@ -647,7 +735,8 @@ mod tests {
     fn context_read_stays_within_region_boundary() {
         let bytes = [0xabu8; 32];
         let start = bytes.as_ptr() as usize;
-        // A deliberately narrower region proves the context read respects its bounds.
+
+        // 刻意收窄的 region 用于证明上下文读取遵守其边界
         let info = MEMORY_BASIC_INFORMATION {
             BaseAddress: start as _,
             RegionSize: bytes.len(),
@@ -655,6 +744,7 @@ mod tests {
             Protect: windows::Win32::System::Memory::PAGE_READWRITE,
             ..Default::default()
         };
+
         let position = 0.0;
         let root = 0u64;
         let reader = reader(&position, &root, &[0]);
@@ -663,6 +753,7 @@ mod tests {
         assert_eq!(report["targetOffset"], 4);
         assert_eq!(report["readBytes"], bytes.len());
         assert_eq!(report["bytesHex"], "ab".repeat(bytes.len()));
+
         let protected = MEMORY_BASIC_INFORMATION {
             Protect: windows::Win32::System::Memory::PAGE_NOACCESS,
             ..info

@@ -4,6 +4,9 @@ import { Folder } from 'kubai-icons-react';
 
 import { IconButton } from './IconButton';
 
+/**
+ * 请求 host 在系统文件管理器中打开用户 plugin 目录
+ */
 export function OpenPluginDirectoryButton() {
   const open = useMutation({
     mutationFn: async () => {

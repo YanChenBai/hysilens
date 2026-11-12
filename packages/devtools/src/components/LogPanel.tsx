@@ -10,7 +10,9 @@ const LEVEL_CLASS: Record<LogEntry['level'], string> = {
   error: 'text-destructive',
 };
 
-/** Host lifecycle changes and errors the plugin reported through `report()`. */
+/**
+ * Host 生命周期变化，以及 plugin 通过 `report()` 上报的错误
+ */
 export function LogPanel({ log, onClear }: { log: LogEntry[]; onClear: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">

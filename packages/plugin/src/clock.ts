@@ -1,16 +1,20 @@
 import { MAX_EXTRAPOLATION_MS } from './protocol';
 import type { ClockAnchor } from './protocol';
 
-/** Corrections at least this large are seeks or song changes and apply immediately. */
+/**
+ * 至少达到该幅度的修正视为 seek 或切歌，立即生效
+ */
 export const CLOCK_SNAP_MS = 400;
 
 /**
- * Smaller corrections are absorbed linearly over this window. Keeping it longer than
- * `CLOCK_SNAP_MS` means displayed time never runs backwards while playing at rate 1.
+ * 更小的修正会在这段窗口内线性吸收
+ * 它比 `CLOCK_SNAP_MS` 更长，因此按速率 1 播放时显示时间不会倒退
  */
 export const CLOCK_SLEW_MS = 600;
 
-/** Project an anchor received at `receivedAt` to `now`, bounded so a lost host freezes time. */
+/**
+ * 把在 `receivedAt` 收到的 anchor 投影到 `now`，并做上界限制，使 host 失联时时间冻结
+ */
 export function project(anchor: ClockAnchor, receivedAt: number, now: number): number | null {
   if (anchor.position === null) {
     return null;
@@ -21,19 +25,30 @@ export function project(anchor: ClockAnchor, receivedAt: number, now: number): n
   return anchor.position + elapsed * anchor.rate;
 }
 
+/**
+ * 带平滑的单调歌词时间视图，由 `createClock` 创建
+ */
 export interface Clock {
+  /**
+   * 送入最新的权威 anchor；小修正做 slew，大修正直接 snap
+   */
   readonly set: (anchor: ClockAnchor) => void;
+
+  /**
+   * 当前显示时间，单位 ms；anchor 没有位置时返回 `null`
+   */
   readonly time: () => number | null;
 }
 
 /**
- * Lyric time seen by a plugin. Sampled playback positions jitter by tens of milliseconds, so
- * small corrections are slewed in rather than applied as visible jumps in word animations.
+ * plugin 看到的歌词时间
+ * 采样得到的播放位置会有几十毫秒的抖动，因此小修正采用 slew 渐入，
+ * 而不是在逐字动画里表现为可见跳变
  */
 export function createClock(initial: ClockAnchor, now: () => number): Clock {
   let anchor = initial;
   let receivedAt = now();
-  // Displayed minus authoritative time when the latest correction arrived; decays to zero.
+  /* 最近一次修正到达时显示时间与权威时间之差，会衰减到 0 */
   let error = 0;
   let slewStart = receivedAt;
 
@@ -60,7 +75,7 @@ export function createClock(initial: ClockAnchor, now: () => number): Clock {
       const target = project(anchor, receivedAt, receivedAt);
       const delta = displayed === null || target === null ? Infinity : displayed - target;
 
-      // Paused, unknown or seeking: show the authoritative position exactly.
+      /* 暂停、位置未知或正在 seek：精确显示权威位置 */
       error = next.rate === 0 || Math.abs(delta) >= CLOCK_SNAP_MS ? 0 : delta;
     },
     time,

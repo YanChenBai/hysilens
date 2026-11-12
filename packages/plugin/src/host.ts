@@ -10,48 +10,93 @@ import type {
   PluginMessage,
 } from './protocol';
 
-/** Resend a clock anchor once the plugin's projection drifts further than this. */
+/**
+ * 当 plugin 的投影偏差超过该值时就重发一次 clock anchor
+ */
 export const CLOCK_DRIFT_MS = 30;
 
 /**
- * While time advances, refresh the anchor at least this often. Plugins stop extrapolating
- * after `MAX_EXTRAPOLATION_MS` (a lost-host guard), so an accurate but silent anchor would
- * otherwise freeze lyrics briefly every two seconds and then jump.
+ * 时间推进期间，至少按该频率刷新 anchor
+ * plugin 在超过 `MAX_EXTRAPOLATION_MS` 后停止外推（这是 host 失联的保护），
+ * 所以准确但静默的 anchor 会每隔两秒让歌词短暂冻结再跳一下
  */
 export const CLOCK_HEARTBEAT_MS = 1_000;
 
+/**
+ * 等待 `ready` 的最长时间，超时则让该实例失败，单位 ms
+ */
 export const READY_TIMEOUT_MS = 10_000;
 
+/**
+ * `dispose()` 等待 plugin 回复 `disposed` 的最长时间，超时后仍会关闭 port，单位 ms
+ */
 export const DISPOSE_TIMEOUT_MS = 1_000;
 
+/**
+ * 单个 host 实例的生命周期：`connect` 之前是 `idle`，之后是 `connecting`，
+ * 直到 plugin 报告 `ready`
+ * `error` 表示致命失败，仍可被 dispose；`disposed` 是终态
+ */
 export type HostPhase = 'idle' | 'connecting' | 'ready' | 'error' | 'disposing' | 'disposed';
 
+/**
+ * host 阶段与错误文本的快照，用于向 `onStatus` 汇报
+ */
 export interface HostStatus {
   phase: HostPhase;
-  /** Latest fatal error, or the most recent non-fatal report while still running. */
+
+  /**
+   * 最近的致命错误；仍在运行则是最新一次非致命报告
+   */
   error?: string;
 }
 
+/**
+ * 握手中接收消息的一侧；`iframe.contentWindow` 即满足该接口
+ */
 export interface ConnectTarget {
   postMessage(message: ConnectMessage, targetOrigin: string, transfer: Transferable[]): void;
 }
 
+/**
+ * 单个实例的接线方式；`initial` 提供握手状态，其余项调整时序与上报
+ */
 export interface PluginHostOptions {
+  /**
+   * 复制进 `init` 消息的状态；后续 setter 会替换该副本中的某个分片
+   */
   initial: InitPayload;
+
+  /**
+   * 用于投影与 heartbeat 计时的单调时钟，单位 ms；默认 `performance.now`
+   */
   now?: () => number;
+
+  /**
+   * 覆盖 `READY_TIMEOUT_MS`
+   */
   readyTimeoutMs?: number;
+
+  /**
+   * 覆盖 `DISPOSE_TIMEOUT_MS`
+   */
   disposeTimeoutMs?: number;
+
+  /**
+   * 每次状态变化时同步调用，包括 `error` 与 `disposed`
+   */
   onStatus?: (status: HostStatus) => void;
 }
 
 interface SentClock {
   anchor: ClockAnchor;
+
   at: number;
 }
 
 /**
- * Host side of one plugin instance: owns the port, keeps the latest state for the handshake,
- * and forwards only meaningful changes. One instance serves one iframe document.
+ * 单个 plugin 实例的 host 侧：持有 port、为握手保留最新状态，
+ * 并且只转发真正有意义的变更；一个实例服务一个 iframe 文档
  */
 export class PluginHost {
   #state: InitPayload;
@@ -70,11 +115,16 @@ export class PluginHost {
     this.#now = options.now ?? (() => performance.now());
   }
 
+  /**
+   * 最新的状态对象；与传给 `onStatus` 的是同一个实例
+   */
   get status(): HostStatus {
     return this.#status;
   }
 
-  /** Hand a fresh port to the plugin page. Later calls are ignored. */
+  /**
+   * 把一个新的 port 交给 plugin 页面；之后的调用会被忽略
+   */
   connect(target: ConnectTarget): void {
     if (this.#status.phase !== 'idle') {
       return;
@@ -84,8 +134,10 @@ export class PluginHost {
     this.#port = channel.port1;
     this.#port.addEventListener('message', event => this.#receive(event.data as PluginMessage));
     this.#port.start();
+
     target.postMessage({ kind: CONNECT_KIND, apiVersion: API_VERSION }, '*', [channel.port2]);
     this.#setStatus({ phase: 'connecting' });
+
     this.#send({ kind: 'init', ...this.#state });
     this.#sentClock = { anchor: this.#state.clock, at: this.#now() };
     this.#readyTimer = setTimeout(
@@ -94,6 +146,9 @@ export class PluginHost {
     );
   }
 
+  /**
+   * 替换 config，除非传入的是同一个对象；plugin 会整体看到新对象
+   */
   setConfig(config: Record<string, unknown>): void {
     if (config === this.#state.config) {
       return;
@@ -103,6 +158,9 @@ export class PluginHost {
     this.#send({ kind: 'config', config });
   }
 
+  /**
+   * 替换歌词，除非传入的是同一个对象
+   */
   setLyrics(document: LyricDocument | null): void {
     if (document === this.#state.lyrics) {
       return;
@@ -112,6 +170,9 @@ export class PluginHost {
     this.#send({ kind: 'lyrics', document });
   }
 
+  /**
+   * 仅在 `playing` 或 `visible` 确实变化时发送
+   */
   setPlayback(playback: Playback): void {
     const current = this.#state.playback;
 
@@ -123,7 +184,9 @@ export class PluginHost {
     this.#send({ kind: 'playback', ...playback });
   }
 
-  /** Record the authoritative clock; transmit only when the plugin's projection would drift. */
+  /**
+   * 记录权威 clock；仅当 plugin 的投影会出现偏差时才发送
+   */
   syncClock(anchor: ClockAnchor): void {
     this.#state.clock = { ...anchor };
 
@@ -139,7 +202,9 @@ export class PluginHost {
     this.#sentClock = { anchor: { ...anchor }, at: this.#now() };
   }
 
-  /** Ask the plugin to unmount; resolves after `disposed` or the timeout. */
+  /**
+   * 请 plugin 卸载；在收到 `disposed` 或超时后 resolve
+   */
   dispose(): Promise<void> {
     if (this.#disposed) {
       return this.#disposed;
@@ -155,6 +220,7 @@ export class PluginHost {
     }
 
     this.#setStatus({ ...this.#status, phase: 'disposing' });
+
     this.#disposed = new Promise<void>(resolve => {
       const finish = () => {
         clearTimeout(timer);
@@ -167,6 +233,7 @@ export class PluginHost {
       const timer = setTimeout(finish, this.#options.disposeTimeoutMs ?? DISPOSE_TIMEOUT_MS);
       this.#resolveDisposed = finish;
     });
+
     this.#port.postMessage({ kind: 'dispose' } satisfies HostMessage);
 
     return this.#disposed;
@@ -252,8 +319,9 @@ export class PluginHost {
 }
 
 /**
- * Connect `host` to an iframe on whichever comes first: the frame's `load`, or the plugin page
- * announcing it is listening. Call before assigning `src`. Returns a detach function.
+ * 在 frame 的 `load` 或 plugin 页面宣告已开始监听这两者中较早的那个时刻，
+ * 把 `host` 连接到该 iframe
+ * 要在设置 `src` 之前调用，返回解绑函数
  */
 export function attachFrame(host: PluginHost, frame: HTMLIFrameElement): () => void {
   const connect = () => {

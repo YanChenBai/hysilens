@@ -1,4 +1,6 @@
-/** Serve the devtools UI bundled with `@hysilens/plugin`. */
+/**
+ * 提供 `@hysilens/plugin` 内置的 devtools UI
+ */
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, relative, sep } from 'node:path';
@@ -6,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 import type { Connect } from 'vite-plus';
 
+/**
+ * 内置 UI 资源对外提供的 URL 前缀
+ */
 export const DEVTOOLS_BASE = '/__hysilens/devtools/';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -18,7 +23,9 @@ const CONTENT_TYPES: Record<string, string> = {
   '.json': 'application/json',
 };
 
-/** Resolve the prebuilt UI inside this package; no workspace sources are needed at runtime. */
+/**
+ * 定位本包内预构建好的 UI；运行时不需要任何 workspace 源码
+ */
 export function ensureDevtools(): string {
   const dist = fileURLToPath(new URL('../dist/devtools/', import.meta.url));
 
@@ -31,7 +38,9 @@ export function ensureDevtools(): string {
   return dist;
 }
 
-/** Serve `/` and `/__hysilens/devtools/*` from the built devtools. */
+/**
+ * 从构建产物 devtools 中提供 `/` 与 `/__hysilens/devtools/*`
+ */
 export function devtoolsMiddleware(dist: string): Connect.NextHandleFunction {
   return (request, response, next) => {
     const path = decodeURIComponent(request.url?.split('?')[0] ?? '');

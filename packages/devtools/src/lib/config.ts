@@ -1,31 +1,62 @@
 import type { PluginFeatures, PluginViewport } from '@hysilens/plugin';
 
-/** Served by `hysilens dev`; empty when devtools are hosted by that same server. */
+/**
+ * 由 `hysilens dev` 提供；当 devtools 也由该服务器托管时为空
+ */
 export const target = (import.meta.env.VITE_HYSILENS_TARGET as string | undefined) ?? '';
 
+/**
+ * `@hysilens/plugin` 为单个配置字段生成的 JSON Schema 子集，
+ * 外加 devtools 表单用作 UI 元数据的 `x-hysilens-*` 注解
+ */
 export interface SchemaField {
   type?: string;
+
   title?: string;
+
   description?: string;
+
   default?: unknown;
+
   enum?: unknown[];
+
   minimum?: number;
+
   maximum?: number;
+
   maxLength?: number;
+
   pattern?: string;
+
+  /**
+   * 为该字段渲染的表单控件，不再从 `type` 推断
+   */
   'x-hysilens-control'?: 'color' | 'font' | 'slider';
+
+  /**
+   * slider 增量；缺省时由控件自行选择合适的 step
+   */
   'x-hysilens-step'?: number;
+
   'x-hysilens-enum-labels'?: Record<string, string>;
+
   'x-hysilens-font-families'?: string[];
 }
 
-/** The subset of `hysilens.config.ts` the dev server exposes at `/__hysilens/config.json`. */
+/**
+ * dev server 在 `/__hysilens/config.json` 暴露的 `hysilens.config.ts` 子集
+ */
 export interface PluginInfo {
   id: string;
+
   name: string;
+
   description?: string;
+
   viewport?: PluginViewport;
+
   features: PluginFeatures;
+
   configSchema: { properties?: Record<string, SchemaField> };
 }
 
@@ -51,14 +82,18 @@ export function defaults(info: PluginInfo): ConfigValues {
 
 const storageKey = (info: PluginInfo) => `hysilens-devtools:config:${info.id}`;
 
-/** Keep edits for fields the schema still has; new fields start at their defaults. */
+/**
+ * 保留 schema 中仍存在的字段的修改；新字段使用其默认值
+ */
 export function reconcile(info: PluginInfo, config: ConfigValues): ConfigValues {
   const base = defaults(info);
 
   return { ...base, ...Object.fromEntries(Object.entries(config).filter(([key]) => key in base)) };
 }
 
-/** Saved edits over schema defaults; keys the schema no longer has are dropped. */
+/**
+ * 在 schema 默认值之上叠加已保存的修改；schema 中已不存在的键会被丢弃
+ */
 export function restoreConfig(info: PluginInfo): ConfigValues {
   try {
     const saved = JSON.parse(sessionStorage.getItem(storageKey(info)) ?? '{}') as ConfigValues;

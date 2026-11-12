@@ -62,6 +62,7 @@ describe('playback clock', () => {
     state.session!.sourceId = 'kugou';
     state.session!.positionMs = 123548.812;
     state.session!.durationMs = null;
+
     expect(playbackPosition(state, 5500)).toBe(124048.812);
     expect(playbackPosition(state, 20000)).toBe(125548.812);
 

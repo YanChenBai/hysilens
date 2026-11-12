@@ -8,15 +8,19 @@ const createThemeStore = (theme: Theme) => createStore({ theme });
 const ThemeContext = createContext<ReturnType<typeof createThemeStore> | null>(null);
 
 export type ThemeProviderProps = PropsWithChildren<{
-  /** 初始主题；默认跟随系统，挂载后优先读取本地保存值。 */
+  /**
+   * 初始主题；默认跟随系统，挂载后优先读取本地保存值
+   */
   defaultTheme?: Theme;
 
-  /** 保存主题偏好的 localStorage 键；默认 hysilens-theme。 */
+  /**
+   * 保存主题偏好的 localStorage 键；默认 `hysilens-theme`
+   */
   storageKey?: string;
 }>;
 
 /**
- * 提供独立的主题状态，并统一遵从系统的减少动画设置。
+ * 提供独立的主题状态，并统一遵从系统的减少动画设置
  * @example
  * ```tsx
  * <ThemeProvider defaultTheme="system">
@@ -29,7 +33,7 @@ export function ThemeProvider({
   defaultTheme = 'system',
   storageKey = 'hysilens-theme',
 }: ThemeProviderProps) {
-  // 每个 Provider 持有独立 store，避免 SSR 请求或多个预览实例共享状态。
+  /* 每个 Provider 持有独立的 store，避免 SSR 请求或多个预览实例共享状态 */
   const [store] = useState(() => createThemeStore(defaultTheme));
 
   useEffect(() => {
@@ -40,7 +44,7 @@ export function ThemeProvider({
         store.setState(() => ({ theme: saved }));
       }
     } catch {
-      /* 隐私模式下仍允许在当前会话内切换主题。 */
+      /* 隐私模式下仍允许在当前会话内切换主题 */
     }
 
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -59,7 +63,7 @@ export function ThemeProvider({
       try {
         localStorage.setItem(storageKey, store.get().theme);
       } catch {
-        /* 存储不可用时保留内存状态。 */
+        /* 存储不可用时保留内存状态 */
       }
     });
 
@@ -80,7 +84,7 @@ export function ThemeProvider({
 }
 
 /**
- * 读取和切换所在 ThemeProvider 的主题。
+ * 读取和切换所在 `ThemeProvider` 的主题
  * @example
  * ```tsx
  * const { theme, setTheme } = useTheme();

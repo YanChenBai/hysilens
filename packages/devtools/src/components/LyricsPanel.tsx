@@ -8,10 +8,31 @@ import type { Transport } from '../lib/transport';
 import { useNow } from '../lib/use-now';
 import { Choice } from './Choice';
 
+/**
+ * 与 `line` 起始时间相同的次要轨道文本，没有时返回 undefined
+ */
 function secondary(document: LyricDocument, kind: string, line: LyricLine) {
   return document.tracks
     .find(track => track.kind === kind)
     ?.lines.find(candidate => candidate.startMs === line.startMs)?.text;
+}
+
+/**
+ * sample 选择器加歌词列表，播放头所在行会高亮
+ */
+interface LyricsPanelProps {
+  samples: LyricSample[];
+
+  sample: LyricSample;
+
+  onSample: (id: string) => void;
+
+  /**
+   * 播放器状态；位置以歌词毫秒为单位
+   */
+  transport: Transport;
+
+  onTransport: (next: Transport) => void;
 }
 
 export function LyricsPanel({
@@ -20,16 +41,11 @@ export function LyricsPanel({
   onSample,
   transport,
   onTransport,
-}: {
-  samples: LyricSample[];
-  sample: LyricSample;
-  onSample: (id: string) => void;
-  transport: Transport;
-  onTransport: (next: Transport) => void;
-}) {
+}: LyricsPanelProps) {
   const now = useNow(transport.playing);
   const document = sample.document;
   const lines = document.tracks.find(track => track.kind === 'original')?.lines ?? [];
+
   const current = lineIndexAt(lines, positionAt(transport, now));
   const list = useRef<HTMLOListElement>(null);
 

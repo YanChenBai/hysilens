@@ -5,7 +5,7 @@ import type { ComponentProps } from 'react';
 export type FieldProps = ComponentProps<'div'>;
 
 /**
- * 表单字段布局；将 Label、输入和提示放在同一个字段内。
+ * 表单字段布局；将 Label、输入和提示放在同一个字段内
  * @example
  * ```tsx
  * <Field>
@@ -22,7 +22,7 @@ export function Field({ className, ...props }: FieldProps) {
 export type LabelProps = ComponentProps<'label'>;
 
 /**
- * 原生表单标签；使用 htmlFor 关联输入控件。
+ * 原生表单标签；使用 `htmlFor` 关联输入控件
  * @example
  * ```tsx
  * <Label htmlFor="name">名称</Label>
@@ -44,7 +44,7 @@ export function Label({ className, htmlFor, children, ...props }: LabelProps) {
 export type FieldDescriptionProps = ComponentProps<'p'>;
 
 /**
- * 字段辅助说明；使用 aria-describedby 关联输入
+ * 字段辅助说明；使用 `aria-describedby` 关联输入
  * @example
  * ```tsx
  * <FieldDescription id="name-help">公开显示</FieldDescription>
@@ -61,12 +61,14 @@ export function FieldDescription({ className, ...props }: FieldDescriptionProps)
 }
 
 export type FieldErrorProps = ComponentProps<'p'> & {
-  /** 控制错误提示的进出动画；默认根据 children 是否存在判断。 */
+  /**
+   * 控制错误提示的进出动画；默认根据 `children` 是否存在判断
+   */
   show?: boolean;
 };
 
 /**
- * 支持进出动画的错误信息；保持组件挂载，通过 show 控制显隐。
+ * 支持进出动画的错误信息；保持组件挂载，通过 `show` 控制显隐
  * @example
  * ```tsx
  * <FieldError id="name-error" show={!!error}>

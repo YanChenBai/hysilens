@@ -7,7 +7,7 @@ const inputStyles =
 export type InputProps = ComponentProps<'input'>;
 
 /**
- * 单行输入，透传原生属性、事件和 ref。
+ * 单行输入，透传原生属性、事件和 ref
  * @example
  * ```tsx
  * <Input id="name" aria-invalid={!!error} aria-describedby="name-error" />
@@ -27,7 +27,7 @@ export function Input({ className, type = 'text', ...props }: InputProps) {
 export type TextareaProps = ComponentProps<'textarea'>;
 
 /**
- * 多行输入，透传原生属性。
+ * 多行输入，透传原生属性
  * @example
  * ```tsx
  * <Textarea aria-label="备注" rows={4} />

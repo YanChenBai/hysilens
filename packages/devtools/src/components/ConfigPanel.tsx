@@ -7,15 +7,33 @@ import type { ConfigValues, PluginInfo, SchemaField } from '../lib/config';
 import { Choice } from './Choice';
 import { IconButton } from './IconButton';
 
+/**
+ * 各字段表单控件共用的 props
+ */
 interface ControlProps {
+  /**
+   * 把控件与其 label 关联的 DOM id
+   */
   id: string;
+
+  /**
+   * 该控件编辑的配置键
+   */
   name: string;
+
+  /**
+   * 描述有效值与首选控件的 schema 条目
+   */
   field: SchemaField;
+
   value: unknown;
+
   onChange: (value: unknown) => void;
 }
 
-/** Declared step, else whole numbers, except fine steps for small ranges like 0–1 opacity. */
+/**
+ * 返回声明的 step，否则用整数，但 0–1 不透明度这类小范围使用更细的 step
+ */
 function stepFor(field: SchemaField): number {
   const declared = field['x-hysilens-step'];
 
@@ -130,19 +148,22 @@ function Control(props: ControlProps) {
   );
 }
 
-function JsonEditor({
-  config,
-  onChange,
-}: {
+interface JsonEditorProps {
   config: ConfigValues;
+
   onChange: (config: ConfigValues) => void;
-}) {
+}
+
+/**
+ * 原始 JSON 兜底入口；无效文本留在 draft 中并显示其解析错误
+ */
+function JsonEditor({ config, onChange }: JsonEditorProps) {
   const formatted = JSON.stringify(config, null, 2);
   const [draft, setDraft] = useState(formatted);
   const [error, setError] = useState('');
   const [followed, setFollowed] = useState(formatted);
 
-  // Adopt edits made in the form; adjusting state during render avoids an extra effect pass.
+  /* 同步表单中做出的修改；在 render 期间调整 state 省掉一次额外的 effect 轮次 */
   if (formatted !== followed) {
     setFollowed(formatted);
     setDraft(formatted);
@@ -176,15 +197,21 @@ function JsonEditor({
   );
 }
 
-export function ConfigPanel({
-  info,
-  config,
-  onChange,
-}: {
+interface ConfigPanelProps {
   info: PluginInfo;
+
+  /**
+   * 当前值，已与 schema 对齐
+   */
   config: ConfigValues;
+
   onChange: (config: ConfigValues) => void;
-}) {
+}
+
+/**
+ * 根据 plugin 的配置 schema 生成的表单
+ */
+export function ConfigPanel({ info, config, onChange }: ConfigPanelProps) {
   const entries = fields(info);
 
   return (

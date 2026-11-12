@@ -14,6 +14,7 @@ export default defineConfig({
     fontWeight: number({ title: '字重', min: 100, max: 900, step: 100, default: 400 }),
     visibleLines: number({ title: '显示行数', min: 1, max: 15, int: true, default: 5 }),
     lineGap: number({ title: '行间距', min: 0, max: 80, default: preset.lineGap }),
+
     inactiveOpacity: number({
       title: '非当前句透明度',
       min: 0,
@@ -23,6 +24,7 @@ export default defineConfig({
     }),
     color: color({ title: '歌词颜色', default: '#ffffff' }),
     activeColor: color({ title: '当前行颜色', default: '#ffffff' }),
+
     strokeColor: color({ title: '描边颜色', default: '#5b5356' }),
     strokeWidth: number({
       title: '描边宽度',
@@ -33,6 +35,7 @@ export default defineConfig({
     }),
     depthColor: color({ title: '立体颜色', default: '#494146' }),
     depth: number({ title: '立体厚度', min: 0, max: 12, step: 0.5, default: preset.depth }),
+
     shadow: toggle({ title: '文字阴影', default: preset.shadow }),
     shadowColor: color({ title: '阴影颜色', default: '#211a21' }),
     shadowOpacity: number({

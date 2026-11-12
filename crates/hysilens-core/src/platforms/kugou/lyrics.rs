@@ -1,3 +1,5 @@
+//! KRC 文件解码并解析为歌词轨道
+
 use crate::model::{Document, LyricTrack, Metadata};
 use anyhow::{Context, ensure};
 use lyrics_core::traits::LyricsDecrypter;
@@ -6,16 +8,23 @@ use lyrics_parsers::parsers::krc_parser;
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
+/// 把单个 KRC 文件解码为文档，包含原始、翻译和罗马音轨道
+///
+/// # Errors
+///
+/// 文件超过 4 MiB、缺少 `krc1` 头部、无法解密或不含同步歌词行时返回错误
 pub fn load_document(path: &Path) -> anyhow::Result<Document> {
     ensure!(
         fs::metadata(path)?.len() <= 4 * 1024 * 1024,
         "KRC 文件超过 4 MiB"
     );
+
     let bytes = fs::read(path)?;
     ensure!(
         bytes.len() <= 4 * 1024 * 1024 && bytes.starts_with(b"krc1"),
         "KRC 文件头无效"
     );
+
     let plain = String::from_utf8(KrcDecrypter.decrypt_bytes(&bytes)?)?;
     parse(
         plain.trim_start_matches('\u{feff}'),
@@ -29,9 +38,11 @@ pub fn load_document(path: &Path) -> anyhow::Result<Document> {
 fn parse(plain: &str, filename: String) -> anyhow::Result<Document> {
     let original = super::super::qq_music::lyrics::parse(plain, "original")?;
     ensure!(!original.lines.is_empty(), "KRC 没有同步歌词");
+
     let metadata = krc_parser::parse(plain).track_metadata.unwrap_or_default();
     let mut tracks = vec![original];
     let mut warnings = Vec::new();
+
     if let Some(content) =
         krc_parser::get_translation_raw_from_krc(plain).and_then(|value| value.content)
     {
@@ -41,36 +52,46 @@ fn parse(plain: &str, filename: String) -> anyhow::Result<Document> {
                 1 => "translation",
                 _ => continue,
             };
+
             let Some(rows) = item.lyric_content else {
                 continue;
             };
-            // 附属轨道按原始行序对齐；空行也占位，不可先过滤后再 zip。
+
+            // 附属轨道按原始行序对齐；空行也占位，不可先过滤后再 zip
             let data = krc_parser::parse(plain);
             let source_lines = data.lines.unwrap_or_default();
+
             if rows.len() != source_lines.len() {
                 warnings.push(format!("{kind} 行数不一致，已跳过"));
                 continue;
             }
+
             let mut lines = Vec::new();
+
             for (source, row) in source_lines.iter().zip(rows) {
                 let Some(row) = row else { continue };
                 let Some(start_ms) = source.start_time() else {
                     continue;
                 };
+
                 let text = if kind == "romanization" {
                     row.join(" ")
                 } else {
                     row.first().cloned().unwrap_or_default()
                 };
+
                 if text.trim().is_empty() || text == "//" {
                     continue;
                 }
+
                 let mut tokens = Vec::new();
+
                 if kind == "romanization" {
                     let syllables = source
                         .syllables()
                         .map(lyrics_core::models::flatten_syllable_items)
                         .unwrap_or_default();
+
                     if row.len() == syllables.len() {
                         for (index, (text, syllable)) in row.iter().zip(syllables).enumerate() {
                             tokens.push(crate::model::Token {
@@ -89,6 +110,7 @@ fn parse(plain: &str, filename: String) -> anyhow::Result<Document> {
                 });
             }
             lines.sort_by_key(|line| line.start_ms);
+
             if !lines.is_empty() {
                 tracks.push(LyricTrack {
                     kind: kind.into(),
@@ -97,7 +119,9 @@ fn parse(plain: &str, filename: String) -> anyhow::Result<Document> {
             }
         }
     }
+
     let id = format!("{:x}", Sha256::digest(serde_json::to_vec(&tracks)?));
+
     Ok(Document {
         id,
         filename,
@@ -134,6 +158,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(document.metadata.title, "示例");
+
         let line = &document.tracks[0].lines[0];
         assert_eq!(line.start_ms, 1000);
         assert_eq!(line.end_ms, Some(3000));

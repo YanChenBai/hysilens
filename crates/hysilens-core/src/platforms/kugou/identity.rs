@@ -1,5 +1,6 @@
-//! Version-gated, read-only current queue identity. See docs/kugou-matching-research.md.
-//! Never call target vtables: decode the verified getter and traverse its data only.
+//! 按版本校验的只读当前队列标识，参见 docs/kugou-matching-research.md
+//! 绝不调用目标 vtable：只解码已校验的 getter 并遍历其数据
+
 use super::KugouIdentity;
 use anyhow::{Context, ensure};
 use serde::Serialize;
@@ -18,6 +19,7 @@ pub(super) trait Memory {
     fn bytes<const N: usize>(&self, address: usize) -> anyhow::Result<[u8; N]> {
         let mut result = [0; N];
         self.read_into(address, &mut result)?;
+
         Ok(result)
     }
 }
@@ -30,11 +32,13 @@ impl Memory for super::memory::Reader {
 
 fn address(base: usize, offset: usize) -> anyhow::Result<usize> {
     ensure!(base >= 0x10000, "酷狗身份指针为空或无效");
+
     let address = base.checked_add(offset).context("酷狗身份地址溢出")?;
     ensure!(
         (address as u64) < 0x0000_8000_0000_0000,
         "酷狗身份地址超出用户空间"
     );
+
     Ok(address)
 }
 
@@ -45,6 +49,7 @@ fn pointer(memory: &impl Memory, base: usize, offset: usize) -> anyhow::Result<u
         value == 0 || (0x10000u64..0x0000_8000_0000_0000).contains(&(value as u64)),
         "酷狗身份指针无效"
     );
+
     Ok(value)
 }
 
@@ -56,10 +61,14 @@ fn integer(memory: &impl Memory, base: usize, offset: usize) -> anyhow::Result<i
 #[serde(rename_all = "camelCase")]
 pub(super) struct Entry {
     pub call_rva: usize,
+
     pub getter_rva: usize,
+
     pub root_rva: usize,
+
     #[serde(skip)]
     module_base: usize,
+
     #[serde(skip)]
     module_size: usize,
 }
@@ -74,6 +83,7 @@ impl Entry {
             memory.bytes::<2>(base)? == *b"MZ",
             "酷狗身份模块缺少 MZ 标记"
         );
+
         let nt = u32::from_le_bytes(memory.bytes(address(base, 0x3c)?)?) as usize;
         let within = |offset: usize, length: usize| -> anyhow::Result<usize> {
             ensure!(
@@ -82,11 +92,13 @@ impl Entry {
             );
             address(base, offset)
         };
+
         let header = memory.bytes::<24>(within(nt, 24)?)?;
         ensure!(
             &header[..4] == b"PE\0\0" && header[4..6] == [0x64, 0x86],
             "酷狗身份模块不是 PE x64"
         );
+
         let count = u16::from_le_bytes([header[6], header[7]]) as usize;
         let optional_size = u16::from_le_bytes([header[20], header[21]]) as usize;
         ensure!(
@@ -97,17 +109,21 @@ impl Entry {
             memory.bytes::<2>(within(nt + 24, 2)?)? == [0x0b, 0x02],
             "酷狗身份模块不是 PE32+"
         );
+
         let mut hits = Vec::new();
         let mut scanned = 0usize;
+
         for index in 0..count {
             let section = memory.bytes::<40>(within(nt + 24 + optional_size + index * 40, 40)?)?;
             let field = |offset| {
                 u32::from_le_bytes(section[offset..offset + 4].try_into().unwrap_or_default())
                     as usize
             };
+
             if field(36) & 0x2000_0000 == 0 {
                 continue;
             }
+
             let length = field(8);
             let start = field(12);
             within(start, length)?;
@@ -115,19 +131,23 @@ impl Entry {
                 .checked_add(length)
                 .context("酷狗身份扫描长度溢出")?;
             ensure!(scanned <= MAX_CODE_BYTES, "酷狗身份代码扫描超过上限");
-            // Only executable module sections, once per attachment. Carry pattern-1
-            // bytes across blocks so a feature straddling a read boundary is found.
+
+            // 只扫描可执行的 module section，每次附着只扫一遍；跨块保留 pattern 首字节，
+            // 以便发现横跨读取边界的特征
             let mut carry = Vec::new();
             let mut offset = 0;
+
             while offset < length {
                 let take = (64 * 1024).min(length - offset);
                 let mut block = vec![0; carry.len() + take];
                 block[..carry.len()].copy_from_slice(&carry);
                 memory.read_into(within(start + offset, take)?, &mut block[carry.len()..])?;
+
                 for at in memchr::memchr_iter(PATTERN[0] as u8, &block) {
                     let Some(window) = block.get(at..at + PATTERN.len()) else {
                         continue;
                     };
+
                     if PATTERN
                         .iter()
                         .zip(window)
@@ -141,26 +161,32 @@ impl Entry {
                 offset += take;
             }
         }
+
         let call_rva = hits.first().copied().context("酷狗身份 AOB 未命中")?;
         let branch = |rva: usize, opcode| -> anyhow::Result<usize> {
             let code = memory.bytes::<5>(within(rva, 5)?)?;
             ensure!(code[0] == opcode, "酷狗身份跳转指令不匹配");
+
             let delta = i32::from_le_bytes(code[1..].try_into()?);
             let target = (rva + 5)
                 .checked_add_signed(delta as isize)
                 .context("酷狗身份跳转目标溢出")?;
             within(target, 5)?;
+
             Ok(target)
         };
+
         let thunk = branch(call_rva, 0xe8)?;
         let getter_rva = branch(thunk, 0xe9)?;
         let code = memory.bytes::<13>(within(getter_rva, 13)?)?;
-        // This getter starts with the redundant REX prefix 40 53. Omitting it
-        // shifts the RIP displacement by one byte and produces a bogus root.
+
+        // 该 getter 以冗余的 REX 前缀 40 53 开头，漏掉它会让 RIP 位移偏移一个字节，
+        // 得到错误的 root
         ensure!(
             code[..2] == [0x40, 0x53] && code[6..9] == [0x48, 0x8b, 0x05],
             "酷狗身份单例 getter 不匹配"
         );
+
         let delta = i32::from_le_bytes(code[9..13].try_into()?);
         let root_rva = (getter_rva + 13)
             .checked_add_signed(delta as isize)
@@ -176,31 +202,35 @@ impl Entry {
     }
 
     pub fn read(&self, memory: &impl Memory) -> anyhow::Result<KugouIdentity> {
-        // Never retain a heap record across samples. Re-resolve twice, including
-        // source references, so queue/cache mutation fails this sample closed.
+        // 绝不在采样之间保留堆记录，连续解析两次（含来源引用），使队列或 cache 的变更
+        // 让本次采样安全失败
         let first = self.read_once(memory)?;
         ensure!(
             self.read_once(memory)? == first,
             "酷狗身份正在切换，稍后重试"
         );
+
         Ok(first)
     }
 
     fn queue(&self, memory: &impl Memory) -> anyhow::Result<(usize, usize)> {
         let manager = pointer(memory, self.module_base, self.root_rva)?;
         let implementation = pointer(memory, manager, 0x20)?;
+
         Ok((implementation, pointer(memory, implementation, 0x70)?))
     }
 
     fn read_once(&self, memory: &impl Memory) -> anyhow::Result<KugouIdentity> {
         let (implementation, queue) = self.queue(memory)?;
-        // +C8 is the state serializer's current locator. +78 has been observed
-        // pointing at the PREVIOUS song; do not use that older engine fallback.
+
+        // +C8 是状态序列化器当前的 locator；+78 曾被观察到指向上一首歌曲，
+        // 不要使用那个旧引擎回退
         let locator = memory.bytes::<16>(address(queue, 0xc8)?)?;
         let item = i32::from_le_bytes(locator[..4].try_into()?);
         let list_id = i32::from_le_bytes(locator[4..8].try_into()?);
         let interface = usize::try_from(u64::from_le_bytes(locator[8..].try_into()?))?;
         ensure!(item > 0 && list_id == 0, "酷狗当前队列类型尚未适配");
+
         let vtable = pointer(memory, interface, 0)?;
         let getter = pointer(memory, vtable, 8)?;
         ensure!(
@@ -214,6 +244,7 @@ impl Entry {
             memory.bytes::<6>(getter)? == [0xb8, 6, 0, 0, 0, 0xc3],
             "酷狗队列接口类型尚未适配"
         );
+
         let controller = interface.checked_sub(8).context("酷狗队列接口地址无效")?;
         let depot = pointer(memory, controller, 0x30)?;
         let model = pointer(memory, depot, 0x48)?;
@@ -226,15 +257,18 @@ impl Entry {
             source_type == 6 && source_list == 0 && source_song > 0,
             "酷狗歌曲来源尚未适配 ({source_type}, {source_list})"
         );
+
         let provider = pointer(memory, implementation, 0x110)?;
         let source = pointer(memory, provider, 0x40)?;
         let source_vtable = pointer(memory, source, 0)?;
-        // Offsets after the AOB entry are specific to 20.1.61.28014. Verify the
-        // source accessor too rather than trusting a version string alone.
+
+        // AOB 条目之后的偏移专用于 20.1.61.28014；除版本字符串外，
+        // 还要校验来源 accessor
         ensure!(
             pointer(memory, source_vtable, 0x138)? == self.module_base + 0xf26a88,
             "酷狗来源歌曲 accessor 不匹配"
         );
+
         let manager = pointer(memory, source, 0x10)?;
         let lists = pointer(memory, manager, 0x40)?;
         let list = find_list(memory, lists, source_list)?;
@@ -246,11 +280,13 @@ impl Entry {
             standard != [0; 16] || played != [0; 16],
             "酷狗当前歌曲没有有效 hash"
         );
+
         let mix_song_id = u64::from_le_bytes(memory.bytes(address(record, 0x298)?)?);
         ensure!(
             mix_song_id <= 9_007_199_254_740_991,
             "酷狗 MixSongID 超出协议整数范围"
         );
+
         let recommend_krc_id = u32::from_le_bytes(memory.bytes(address(record, 0x280)?)?);
         ensure!(
             integer(memory, record, 0)? == source_song
@@ -282,17 +318,22 @@ fn find_list(memory: &impl Memory, lists: usize, wanted: i32) -> anyhow::Result<
     let head = pointer(memory, lists, 0x40)?;
     let mut node = pointer(memory, head, 8)?;
     let mut seen = HashSet::new();
+
     for _ in 0..MAX_TREE_STEPS {
         if node == 0 || node == head {
             break;
         }
         ensure!(seen.insert(node), "酷狗列表树存在循环");
+
         let nil = memory.bytes::<1>(address(node, 0x19)?)?[0];
         ensure!(nil <= 1, "酷狗列表节点标志无效");
+
         if nil == 1 {
             break;
         }
+
         let key = integer(memory, node, 0x20)?;
+
         if key == wanted {
             return pointer(memory, node, 0x28);
         }
@@ -314,17 +355,22 @@ fn find_intrusive(
     } else {
         tagged.checked_sub(hook).context("酷狗树根无效")?
     };
+
     let mut seen = HashSet::new();
+
     for _ in 0..MAX_TREE_STEPS {
         if node == 0 || node == head {
             break;
         }
         ensure!(seen.insert(node), "酷狗歌曲树存在循环");
+
         let record = pointer(memory, node, 0)?;
         let key = integer(memory, record, 0)?;
+
         if key == wanted {
             return Ok(record);
         }
+
         let child = pointer(memory, node, hook + if wanted < key { 8 } else { 16 })?;
         node = if child == 0 {
             0
@@ -350,6 +396,7 @@ mod tests {
                 .get(offset..offset + output.len())
                 .context("outside fixture")?;
             output.copy_from_slice(data);
+
             Ok(())
         }
     }
@@ -377,10 +424,12 @@ mod tests {
         f.put(0x84, &[0x64, 0x86, 1, 0]);
         f.put(0x94, &[0xf0, 0]);
         f.put(0x98, &[0x0b, 2]);
+
         let section = 0x188;
         f.int(section + 8, 0x11000);
         f.int(section + 12, 0x1000);
         f.int(section + 36, 0x20000000);
+
         let pattern: Vec<_> = PATTERN
             .iter()
             .map(|byte| if *byte < 0 { 0 } else { *byte as u8 })
@@ -417,6 +466,7 @@ mod tests {
                 .to_string()
                 .contains("多处")
         );
+
         for (offset, bytes) in [
             (0x3000, vec![0]),
             (0x1800, vec![0]),
@@ -431,6 +481,7 @@ mod tests {
 
     fn song_fixture() -> (Fixture, Entry) {
         let mut f = Fixture(vec![0; 0x20000]);
+
         for (at, target) in [
             (0x4000, 0x5000),
             (0x5020, 0x6000),
@@ -460,6 +511,7 @@ mod tests {
             f.ptr(at, target);
         }
         f.int(0x70c8, 42);
+
         for (offset, value) in [(0, 42), (4, 6), (8, 0), (12, 84)] {
             f.int(0x1b000 + offset, value);
         }
@@ -470,6 +522,7 @@ mod tests {
         f.put(0x13430, &[0xcd; 16]);
         f.int(0x13280, 987);
         f.put(0x13298, &123456u64.to_le_bytes());
+
         let entry = Entry {
             call_rva: 0,
             getter_rva: 0,
@@ -502,6 +555,7 @@ mod tests {
     #[test]
     fn rejects_unknown_sources_cycles_empty_hashes_and_missing_nodes() {
         let (f, entry) = song_fixture();
+
         for (offset, bytes) in [
             (0x1b004, 5i32.to_le_bytes().to_vec()),
             (0x13000, 85i32.to_le_bytes().to_vec()),
@@ -512,10 +566,12 @@ mod tests {
             bad.put(offset, &bytes);
             assert!(entry.read(&bad).is_err());
         }
+
         let mut empty = Fixture(f.0.clone());
         empty.put(0x13038, &[0; 16]);
         empty.put(0x13430, &[0; 16]);
         assert!(entry.read(&empty).is_err());
+
         let mut cycle = Fixture(f.0.clone());
         cycle.int(0x1b000, 0);
         cycle.ptr(0x1a020, 0x1a010);
@@ -528,12 +584,15 @@ mod tests {
         impl Memory for Changing {
             fn read_into(&self, address: usize, output: &mut [u8]) -> anyhow::Result<()> {
                 self.0.read_into(address, output)?;
+
                 if address == BASE + 0x70c8 && self.1.fetch_add(1, Ordering::Relaxed) > 0 {
                     output[0] ^= 1;
                 }
+
                 Ok(())
             }
         }
+
         let (f, entry) = song_fixture();
         assert!(
             entry
@@ -550,12 +609,14 @@ mod tests {
         let reader = super::super::memory::Reader::attach().unwrap();
         let identity = reader.identity().unwrap();
         println!("{}", serde_json::to_string(&identity).unwrap());
+
         if let Some(path) = std::env::var_os("HYSILENS_KUGOU_PROBE_CACHE") {
             let catalog = super::super::catalog::read(std::path::Path::new(&path)).unwrap();
             let session = crate::model::Session {
                 lyric_match: Some(identity.lyric_match()),
                 ..Default::default()
             };
+
             let result = super::super::catalog::resolve(&catalog, &session, None);
             println!(
                 "{}",

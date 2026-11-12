@@ -7,10 +7,18 @@ import { getJson } from '../lib/api';
 import type { PluginCatalog } from '../lib/api';
 import { CopySourceButton } from './CopySourceButton';
 
+/**
+ * 告诉 preview iframe 是否应使用演示数据计时
+ */
 function postMode(frame: HTMLIFrameElement | null, playground: boolean) {
   frame?.contentWindow?.postMessage({ kind: 'hysilens:preview-mode', playground }, location.origin);
 }
 
+/**
+ * 当前 plugin 的实时 iframe preview，带演示/实时切换与 OBS 源地址
+ *
+ * @param active renderer id，其声明的 viewport 在有效时显示为推荐尺寸
+ */
 export function PreviewPanel({ active }: { active: string }) {
   const [demo, setDemo] = useState(true);
   const { theme } = useTheme();

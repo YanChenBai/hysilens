@@ -22,6 +22,9 @@ import { PreviewPanel } from '../components/PreviewPanel';
 import { SettingsPanel } from '../components/SettingsPanel';
 import { useSession } from '../lib/session';
 
+/**
+ * 浅色/深色/跟随系统开关，通过共享的 theme provider 立即生效
+ */
 function ThemePicker() {
   const { theme, setTheme } = useTheme();
 
@@ -50,6 +53,9 @@ function ThemePicker() {
   );
 }
 
+/**
+ * 控制工作台：preview 区域、可拖拽分隔条与设置标签页
+ */
 function Workspace() {
   const { snapshot, connection, error } = useSession();
   const overlay = parseOverlayConfig(snapshot?.overlay).options;
@@ -60,6 +66,9 @@ function Workspace() {
   const [dragging, setDragging] = useState(false);
   const [footerActions, setFooterActions] = useState<HTMLDivElement | null>(null);
 
+  /**
+   * 以百分比设置 preview 宽度，并限制 preview 至少保留 280 px、设置列至少保留 340 px
+   */
   function resize(percent: number) {
     const width = workspace.current?.clientWidth;
 
@@ -206,6 +215,9 @@ function Workspace() {
   );
 }
 
+/**
+ * 控制页入口，提供各面板依赖的 theme 与 tooltip provider
+ */
 export default function Control() {
   return (
     <ThemeProvider storageKey="hysilens-next-theme" defaultTheme="dark">

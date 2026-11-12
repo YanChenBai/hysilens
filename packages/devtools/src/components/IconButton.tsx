@@ -2,7 +2,9 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@hysilens/ui';
 import type { ButtonProps } from '@hysilens/ui';
 import { cn } from 'cn';
 
-/** Icon-only ghost button; `label` is both the tooltip and the accessible name. */
+/**
+ * 纯图标 ghost 按钮；`label` 同时作为 tooltip 和无障碍名称
+ */
 export function IconButton({
   label,
   pressed,
@@ -11,7 +13,9 @@ export function IconButton({
   ...props
 }: Omit<ButtonProps, 'aria-label' | 'title' | 'variant' | 'size'> & {
   label: string;
-  /** Renders as a toggle and highlights while on. */
+  /**
+   * 作为 toggle 渲染，开启时高亮
+   */
   pressed?: boolean;
 }) {
   return (

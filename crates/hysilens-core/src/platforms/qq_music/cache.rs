@@ -1,3 +1,9 @@
+//! 监视 QQ Music 歌词 cache 并重新发布其 catalog
+//!
+//! watcher 通过监视最近的已存在祖先目录来跟随被重建的 cache 目录，并在目录出现后重新注册
+//! 到该目录上；扫描经过 debounce，未完成的 catalog 会重试若干次，因为文件可能正在被写入
+//! 和解码
+
 use super::{DESCRIPTOR, catalog};
 use crate::model::{Catalog, Source};
 use crate::platforms::{CatalogUpdate, Context};
@@ -38,7 +44,7 @@ fn watch(
     let mut watcher = notify::recommended_watcher(sender)?;
     let parent = path.ancestors().skip(1).find(|ancestor| ancestor.is_dir());
 
-    // 父目录负责发现缓存目录的删除和重建；目录尚不存在时逐层跟随创建事件。
+    // 父目录负责发现缓存目录的删除和重建；目录尚不存在时逐层跟随创建事件
     if let Some(parent) = parent {
         watcher.watch(parent, RecursiveMode::NonRecursive)?;
     }
@@ -118,10 +124,14 @@ pub(crate) fn spawn_for(
                     },
                     source,
                 );
+
                 return;
             }
         };
+
         let (sender, receiver) = mpsc::channel();
+
+        // 监视与扫描状态；每个 deadline 都是 `Instant`，循环可以直接在它上面休眠
         let mut watcher = None;
         let mut watched_root = None;
         let mut watch_error = None;
@@ -131,12 +141,15 @@ pub(crate) fn spawn_for(
         let mut retries = 0;
 
         while !context.stop.load(Ordering::Relaxed) {
-            // 多层目录可在重新注册监听前全部创建完；扫描成功不代表已监听到最终目录。
+            // 被重建的目录树可能在 watcher 重新注册前就已完整；一次成功扫描并不证明
+            // 最终目录已被监视
             let existing = path.ancestors().find(|ancestor| ancestor.is_dir());
+
             if watcher.is_some() && existing != watched_root.as_deref() {
                 watcher = None;
                 watch_at = Instant::now();
             }
+
             if watcher.is_none() && Instant::now() >= watch_at {
                 match watch(&path, sender.clone()) {
                     Ok((active, anchor)) => {
@@ -158,13 +171,14 @@ pub(crate) fn spawn_for(
                     issues: vec![format!("Cache: {error:#}")],
                     ..Default::default()
                 });
+
                 let incomplete = !catalog.issues.is_empty()
                     || catalog
                         .entries
                         .iter()
                         .any(|entry| !entry.document.warnings.is_empty());
 
-                // 写入和解码可能竞争，只做有限次延迟重试，不定期遍历静止目录。
+                // 写入与解码可能竞争，因此做有限次重试，而不是反复重扫一个安静的目录
                 scan_at = if incomplete && retries < READ_RETRIES {
                     retries += 1;
                     Some(Instant::now() + Duration::from_millis(500 * u64::from(retries)))
@@ -284,9 +298,11 @@ mod tests {
         let unrelated =
             Event::new(EventKind::Create(CreateKind::File)).add_path(path.join("index.db"));
         assert!(!affects_cache(&unrelated, &path));
+
         let access =
             Event::new(EventKind::Access(AccessKind::Any)).add_path(path.join("song_qm.qrc"));
         assert!(!affects_cache(&access, &path));
+
         let rename = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
             .add_path(path.join("temporary"))
             .add_path(path.join("song_qm.qrc"));
@@ -302,6 +318,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("cache");
         fs::create_dir(&path).unwrap();
+
         let (stop, mut receiver, task) = start(path.clone());
         wait_for(&mut receiver, |catalog| catalog.issues.is_empty());
 
@@ -317,7 +334,7 @@ mod tests {
         fs::remove_file(&companion).unwrap();
         wait_for(&mut receiver, |catalog| catalog.issues.is_empty());
 
-        // 损坏 QRC 也应被发现并报告，测试无需依赖 QQ 的加密样本。
+        // 损坏的 QRC 仍必须被报告；该测试避免依赖 QQ 的加密样本
         fs::write(path.join("first_qm.qrc"), "incomplete").unwrap();
         wait_for(&mut receiver, |catalog| {
             catalog
@@ -389,6 +406,7 @@ mod tests {
             catalog::Catalog::default(),
             Source::QqMusic
         ));
+
         let (finished, completion) = mpsc::channel();
         let task = std::thread::spawn(move || {
             finished

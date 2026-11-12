@@ -2,11 +2,23 @@ import { Input } from '@hysilens/ui';
 
 interface Props {
   id: string;
+
+  /**
+   * 用在原生取色器无障碍标签中的颜色名称
+   */
   label: string;
+
+  /**
+   * 输入框中的十六进制颜色文本；无法解析时色块回退为黑色
+   */
   value: string;
+
   onChange: (value: string) => void;
 }
 
+/**
+ * 十六进制颜色文本输入框，搭配原生取色器色块
+ */
 export function ColorField({ id, label, value, onChange }: Props) {
   const color = /^#[\da-f]{6}$/i.test(value) ? value : '#000000';
 

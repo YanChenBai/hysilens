@@ -5,7 +5,7 @@ import type { ComponentProps, ReactNode } from 'react';
 export type SpinnerProps = ComponentProps<typeof LoaderCircle>;
 
 /**
- * 装饰性的加载图标；独立使用时为外层提供可访问的加载状态。
+ * 装饰性的加载图标；独立使用时为外层提供可访问的加载状态
  * @example
  * ```tsx
  * <button aria-busy={loading}>
@@ -25,12 +25,14 @@ export function Spinner({ className, ...props }: SpinnerProps) {
 }
 
 export type LoadingProps = Omit<ComponentProps<'span'>, 'children'> & {
-  /** 可访问的标签文字。 */
+  /**
+   * 可访问的标签文字
+   */
   label?: ReactNode;
 };
 
 /**
- * 包含可访问状态文字的加载提示。
+ * 包含可访问状态文字的加载提示
  * @example
  * ```tsx
  * <Loading label="正在加载成员…" />

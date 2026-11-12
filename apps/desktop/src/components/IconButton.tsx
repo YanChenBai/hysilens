@@ -1,7 +1,9 @@
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@hysilens/ui';
 import type { ButtonProps } from '@hysilens/ui';
 
-/** Icon-only ghost button whose label is both its accessible name and a hover tooltip. */
+/**
+ * 纯图标 ghost 按钮，label 同时作为无障碍名称与悬停 tooltip
+ */
 export function IconButton({
   label,
   children,

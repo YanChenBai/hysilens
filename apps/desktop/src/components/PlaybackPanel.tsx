@@ -14,6 +14,9 @@ const sources = [
   { value: 'kugou', label: '酷狗音乐' },
 ];
 
+/**
+ * playback 同步设置：监听哪个播放器、歌词偏移、歌词候选选择以及每首歌的忽略行
+ */
 export function PlaybackPanel() {
   const { snapshot, connection } = useSession();
   const overlay = parseOverlayConfig(snapshot?.overlay).options;

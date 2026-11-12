@@ -1,4 +1,6 @@
-/** Vite integration: wraps the plugin entry, emits `hysilens.json`, and serves a dev host. */
+/**
+ * Vite 集成：包装 plugin 入口、生成 `hysilens.json`，并提供开发用 host
+ */
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -26,6 +28,10 @@ const DEV_PLUGIN_PATH = '/__hysilens/plugin';
 
 const DEV_CONFIG_PATH = '/__hysilens/config.json';
 
+/**
+ * 在 `root` 中求值 `hysilens.config.ts` 并返回其默认导出
+ * 当该文件导出的不是 `defineConfig` 结果时抛错
+ */
 export async function loadPluginConfig(root: string): Promise<ConfigDefinition<unknown>> {
   const file = resolve(root, CONFIG_FILE);
   const { module } = await runnerImport<{ default: unknown }>(file);
@@ -43,7 +49,9 @@ const DEV_PLUGIN_HTML = `<!doctype html>
   <body><script type="module" src="/@id/${ENTRY_ID}"></script></body>
 </html>`;
 
-/** The plugin page and its description; `/` itself is the prebuilt devtools UI. */
+/**
+ * plugin 页面及其描述；`/` 本身是预构建的 devtools UI
+ */
 function serveDevPages(server: ViteDevServer, definition: () => ConfigDefinition<unknown>) {
   server.middlewares.use(async (request, response, next) => {
     const path = request.url?.split('?')[0];
@@ -60,7 +68,9 @@ function serveDevPages(server: ViteDevServer, definition: () => ConfigDefinition
   });
 }
 
-/** Added by the `hysilens` CLI; do not also list it in a plugin's own vite.config. */
+/**
+ * 由 `hysilens` CLI 添加；不要在 plugin 自己的 vite.config 中再列一次
+ */
 export function hysilens(): VitePlugin {
   let root = process.cwd();
   let configPath = '';
@@ -83,8 +93,10 @@ export function hysilens(): VitePlugin {
       configPath = normalizePath(resolve(root, CONFIG_FILE));
       definition = await loadPluginConfig(root);
 
-      // The entry is a JS module rather than an HTML app, so libraries such as React would
-      // otherwise keep their development branches in the published bundle.
+      /*
+       * 入口是 JS 模块而不是 HTML 应用，否则 React 之类的库会
+       * 把开发分支保留在发布产物里
+       */
       const nodeEnv = env.command === 'build' ? env.mode : 'development';
 
       return {
@@ -124,7 +136,7 @@ export function hysilens(): VitePlugin {
         ].join('\n');
       }
 
-      // Type-only imports are erased before bundling, so reaching here means a value import.
+      /* 仅类型的 import 在打包前已被擦除，所以走到这里说明是值 import */
       if (normalizePath(id.split('?')[0] ?? '') === configPath) {
         this.error(`运行时代码只能用 import type 引用 ${CONFIG_FILE}，否则 zod 会被打进插件包`);
       }
@@ -132,8 +144,12 @@ export function hysilens(): VitePlugin {
       return undefined;
     },
     async configureServer(server) {
-      // Registered before Vite's own middlewares, so `/` is the devtools, not an index.html lookup.
+      /*
+       * 注册在 Vite 自身 middleware 之前，因此 `/` 指向 devtools，
+       * 而不是去找 index.html
+       */
       server.middlewares.use(devtoolsMiddleware(ensureDevtools()));
+
       server.watcher.add(configPath);
       server.watcher.on('change', async file => {
         if (normalizePath(file) === configPath) {
@@ -141,6 +157,7 @@ export function hysilens(): VitePlugin {
           server.ws.send({ type: 'full-reload' });
         }
       });
+
       serveDevPages(server, current);
     },
     generateBundle(_options, bundle) {

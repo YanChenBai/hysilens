@@ -49,14 +49,17 @@ function childFrame() {
 describe('native overlay drag gestures', () => {
   it('leaves left clicks available to plugins', () => {
     const frame = childFrame();
+
     frame.emit('pointerdown', { button: 0 });
     frame.emit('pointermove');
+
     expect(frame.capture).not.toHaveBeenCalled();
     expect(frame.postMessage).not.toHaveBeenCalled();
   });
 
   it('coalesces movement and finishes with the release position', () => {
     const frame = childFrame();
+
     frame.emit('pointerdown');
     frame.emit('pointermove', { screenX: 120 });
     frame.emit('pointermove', { screenX: 150 });
@@ -64,6 +67,7 @@ describe('native overlay drag gestures', () => {
     frame.emit('pointermove', { screenX: 170 });
     frame.emit('pointerup', { screenX: 180, screenY: 210 });
     frame.animate();
+
     expect(frame.capture).toHaveBeenCalledWith(1);
     expect(
       frame.postMessage.mock.calls.map(([message]) => [message.phase, message.x, message.y]),
@@ -76,9 +80,11 @@ describe('native overlay drag gestures', () => {
 
   it('ends once if pointer capture is lost after releasing', () => {
     const frame = childFrame();
+
     frame.emit('pointerdown');
     frame.emit('pointerup');
     frame.emit('lostpointercapture');
+
     expect(frame.postMessage).toHaveBeenCalledTimes(2);
   });
 });

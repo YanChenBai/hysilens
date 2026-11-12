@@ -5,6 +5,9 @@ import { usePluginSync } from './lib/plugin-sync';
 
 const Control = lazy(() => import('./pages/Control'));
 
+/**
+ * 按 pathname 在控制页面与 plugin overlay 之间路由
+ */
 export default function App() {
   usePluginSync();
 

@@ -4,11 +4,20 @@ import { Folder } from 'kubai-icons-react';
 
 interface Props {
   id: string;
+
+  /**
+   * 用在浏览按钮无障碍标签中的字段名
+   */
   label: string;
+
   value: string;
+
   onChange: (value: string) => void;
 }
 
+/**
+ * 目录路径文本输入框，带原生文件夹选择按钮
+ */
 export function DirectoryInput({ id, label, value, onChange }: Props) {
   const choose = useMutation({
     mutationFn: async () => {

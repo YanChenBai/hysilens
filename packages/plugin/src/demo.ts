@@ -1,8 +1,13 @@
 import type { LyricDocument } from './protocol';
 
-/** Six lines at a fixed cadence; previews loop over `DEMO_DURATION_MS`. */
+/**
+ * 六行歌词按固定节奏排列；预览在 `DEMO_DURATION_MS` 上循环
+ */
 const LINE_MS = 6000;
 
+/**
+ * 预览歌词一次循环的时长，单位 ms
+ */
 export const DEMO_DURATION_MS = 6 * LINE_MS;
 
 const segmenter = new Intl.Segmenter('zh', { granularity: 'grapheme' });
@@ -46,6 +51,9 @@ function secondary(kind: string, texts: string[]) {
   };
 }
 
+/**
+ * devtools 预览与 playground 使用的循环歌词文档
+ */
 export const demo: LyricDocument = {
   id: 'playground',
   filename: 'playground',

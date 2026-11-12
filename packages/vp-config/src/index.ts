@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite-plus';
 
 /**
- * 工作区共用的格式、TypeScript 和 React/TSX 检查。
+ * 整个 workspace 共用的格式化、TypeScript 与 React/TSX lint 配置
+ *
  * @example
  * export default defineConfig({ ...qualityConfig, plugins: [react()] });
  */
@@ -144,6 +145,9 @@ export const qualityConfig = defineConfig({
         },
       ],
       curly: 'error',
+      /* 注释独占一行，使代码与说明文字不会共处一行 */
+      'no-inline-comments': 'error',
+      'stylistic/multiline-comment-style': ['error', 'starred-block'],
       'stylistic/brace-style': ['error', '1tbs', { allowSingleLine: false }],
       'no-else-return': 'error',
       'no-lonely-if': 'error',
@@ -185,7 +189,6 @@ export const qualityConfig = defineConfig({
           prev: '*',
           next: ['multiline-const', 'multiline-let', 'multiline-var'],
         },
-
         {
           blankLine: 'always',
           prev: ['multiline-const', 'multiline-let', 'multiline-var'],
@@ -210,7 +213,7 @@ export const qualityConfig = defineConfig({
           'react/no-children-prop': 'error',
           'react/no-direct-mutation-state': 'error',
           'react/no-danger-with-children': 'error',
-          // 状态文本和自绘图形允许使用显式 ARIA 角色，不强制替换标签。
+          /* 状态文本与手绘图形可以用显式 ARIA role 代替语义标签 */
           'jsx-a11y/prefer-tag-over-role': 'off',
           'jsx-a11y/alt-text': 'error',
           'jsx-a11y/aria-props': 'error',

@@ -11,11 +11,16 @@ import type {
 
 type Awaitable<T> = T | Promise<T>;
 
-/** Phantom slot filled by `defineConfig`; read with `definePlugin<typeof config>`. */
+/**
+ * 由 `defineConfig` 填充的 phantom 槽位；用 `definePlugin<typeof config>` 读取
+ */
 export interface ConfigCarrier<Config> {
   readonly '~config'?: Config;
 }
 
+/**
+ * spec 携带的 config 类型；不是 carrier 的类型一律退化为无类型 record
+ */
 export type ConfigOf<T> =
   T extends ConfigCarrier<infer Config>
     ? unknown extends Config
@@ -23,38 +28,100 @@ export type ConfigOf<T> =
       : NonNullable<Config>
     : Record<string, unknown>;
 
+/**
+ * plugin 从 runtime 收到的一切；所有成员都是实时视图或注册点
+ */
 export interface PluginContext<Config> {
-  /** Full-size container created by the runtime and attached to `document.body`. */
+  /**
+   * 由 runtime 创建并挂到 `document.body` 的全尺寸容器
+   */
   readonly root: HTMLElement;
+
+  /**
+   * runtime 运行在 dev 预览而非真实 overlay 中时为 true
+   */
   readonly preview: boolean;
+
+  /**
+   * unmounted hook 执行完后 abort；传给监听器即可自动清理
+   */
   readonly signal: AbortSignal;
-  // Members are function properties, not methods: plugins destructure the context freely.
-  /** Validated configuration with defaults applied by the host. */
+  /* 成员是函数属性而不是方法：plugin 可以随意解构 context */
+
+  /**
+   * 已由 host 套用默认值的校验后配置
+   */
   readonly config: () => Readonly<Config>;
+
+  /**
+   * 当前会话的歌词；尚未加载时为 `null`
+   */
   readonly lyrics: () => LyricDocument | null;
+
+  /**
+   * host 最近发送的播放状态
+   */
   readonly playback: () => Playback;
-  /** Lyric time in ms with offset applied, projected from the latest clock anchor. */
+
+  /**
+   * 已应用 offset 的歌词时间，单位 ms，由最新的 clock anchor 投影而来
+   */
   readonly time: () => number | null;
+
+  /**
+   * plugin 自带文件的绝对 URL，基于 plugin 的 base 解析
+   */
   readonly assetUrl: (path: string) => string;
-  /** Surface a non-fatal error in the host without stopping the plugin. */
+
+  /**
+   * 在 host 中上报非致命错误，不停止 plugin
+   */
   readonly report: (error: unknown) => void;
 
+  /**
+   * 在 `setup` 返回后运行一次；所有 hook 都 resolve 之后才会通知 host `ready`
+   * 必须在 `setup` 中同步调用
+   */
   readonly onMounted: (hook: () => Awaitable<void>) => void;
+
+  /**
+   * 在 dispose 时、`signal` abort 之前运行；即使某个 hook reject，其余 hook 仍会被等待
+   */
   readonly onUnmounted: (hook: () => Awaitable<void>) => void;
+
+  /**
+   * 在 config 变化后运行，参数为新的冻结对象与前一个对象
+   */
   readonly onConfigChange: (hook: (next: Readonly<Config>, prev: Readonly<Config>) => void) => void;
+
+  /**
+   * 在歌词文档被替换后运行
+   */
   readonly onLyricsChange: (hook: (document: LyricDocument | null) => void) => void;
+
   readonly onPlaybackChange: (hook: (playback: Playback) => void) => void;
 }
 
+/**
+ * `definePlugin` 接受的形状：单个同步的 `setup` 入口
+ */
 export interface PluginDefinition<Config> {
+  /**
+   * 同步初始化；异步工作应放进 `onMounted` hook
+   */
   readonly setup: (context: PluginContext<Config>) => void;
 }
 
+/**
+ * `definePlugin` 产出的带标记定义；`kind` 让 bootstrap 拒绝其他被导出为 default 的东西
+ */
 export interface Plugin<Config = Record<string, unknown>> extends PluginDefinition<Config> {
   readonly kind: 'hysilens:plugin';
 }
 
-/** Pure descriptor; the build-injected bootstrap mounts it once the host connects. */
+/**
+ * 纯描述符；host 连接后由构建注入的 bootstrap 挂载它
+ */
 export function definePlugin<Spec = unknown>(
   definition: PluginDefinition<ConfigOf<Spec>>,
 ): Plugin<ConfigOf<Spec>> {
@@ -65,6 +132,9 @@ export function definePlugin<Spec = unknown>(
   return { kind: 'hysilens:plugin', setup: definition.setup };
 }
 
+/**
+ * `value` 是否为 plugin 定义，而不是任意默认导出
+ */
 export function isPlugin(value: unknown): value is Plugin {
   return (
     typeof value === 'object' &&
@@ -74,38 +144,78 @@ export function isPlugin(value: unknown): value is Plugin {
   );
 }
 
+/**
+ * runtime 依赖的 `MessagePort` 子集；runtime 在 `disposed` 之后关闭它
+ */
 export interface PortLike {
   postMessage(message: PluginMessage): void;
   addEventListener(type: 'message', listener: (event: { data: unknown }) => void): void;
+
+  /**
+   * 必须调用才能收到已排队的消息，与 `MessagePort` 一致
+   */
   start(): void;
   close(): void;
 }
 
+/**
+ * `runPlugin` 使用的、由 host 提供的运行环境
+ */
 export interface RuntimeEnvironment {
   port: PortLike;
+
+  /**
+   * 作为 `context.root` 交给 plugin 的容器，由调用方拥有
+   */
   root: HTMLElement;
+
+  /**
+   * `context.assetUrl` 使用的绝对 base，通常是 `document.baseURI`
+   */
   baseUrl: string;
+
+  /**
+   * 用来投影歌词时间的单调时钟，单位 ms
+   */
   now: () => number;
 }
 
+/**
+ * `setup` 期间填充的 hook 列表；之后拒绝再注册，
+ * 因此处理第一条消息时每个列表都已固定
+ */
 interface Hooks<Config> {
   mounted: Array<() => Awaitable<void>>;
+
   unmounted: Array<() => Awaitable<void>>;
+
   config: Array<(next: Readonly<Config>, prev: Readonly<Config>) => void>;
+
   lyrics: Array<(document: LyricDocument | null) => void>;
+
   playback: Array<(playback: Playback) => void>;
 }
 
 interface Instance<Config> {
   state: InitPayload;
+
   hooks: Hooks<Config>;
   setClock(anchor: ClockAnchor): void;
+
   abort: AbortController;
 }
 
+/**
+ * `init` 到达前是 `waiting`，mounted hook 执行期间是 `mounting`，之后是 `ready`
+ * `failed` 表示 setup 或某个 mounted hook 抛错；`disposed` 是终态
+ */
 export type RuntimePhase = 'waiting' | 'mounting' | 'ready' | 'failed' | 'disposing' | 'disposed';
 
-/** Drive one plugin over a connected port. Returns the current phase for diagnostics. */
+/**
+ * 在已连接的 port 上驱动一个 plugin
+ * 返回当前阶段用于诊断，以及转发非致命错误的 `report`
+ * （用于未捕获的 window 错误）
+ */
 export function runPlugin<Config>(plugin: Plugin<Config>, env: RuntimeEnvironment) {
   let phase: RuntimePhase = 'waiting';
   let instance: Instance<Config> | undefined;
@@ -162,6 +272,7 @@ export function runPlugin<Config>(plugin: Plugin<Config>, env: RuntimeEnvironmen
     }
 
     instance?.abort.abort();
+
     send({ kind: 'disposed' });
     phase = 'disposed';
     env.port.close();
@@ -238,6 +349,7 @@ function createInstance<Config>(
 
   const clock = createClock(payload.clock, env.now);
   const abort = new AbortController();
+
   const hooks: Hooks<Config> = { mounted: [], unmounted: [], config: [], lyrics: [], playback: [] };
   let registering = true;
 

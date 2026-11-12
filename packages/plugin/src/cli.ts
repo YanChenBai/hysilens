@@ -1,4 +1,6 @@
-/** `hysilens` command line: build, develop, validate, link and pack renderer plugins. */
+/**
+ * `hysilens` 命令行：构建、开发、校验、链接与打包 renderer plugin
+ */
 import { existsSync } from 'node:fs';
 import {
   lstat,
@@ -46,12 +48,15 @@ function pluginRoot(dir: string | undefined): string {
   return root;
 }
 
-/** Build one plugin directory and return its validated manifest. */
+/**
+ * 构建单个 plugin 目录并返回校验通过的 manifest
+ */
 export async function buildPlugin(
   dir: string,
   options: { logLevel?: 'info' | 'warn' | 'error' | 'silent' } = {},
 ): Promise<PluginManifest> {
   const root = pluginRoot(dir);
+
   await build({ root, logLevel: options.logLevel, plugins: [hysilens()] });
 
   return assertValid(join(root, 'dist'));
@@ -81,7 +86,9 @@ async function dev(dir: string | undefined, port: string | undefined) {
 async function validate(dir: string | undefined) {
   const root = resolve(dir ?? '.');
   const directory = existsSync(join(root, MANIFEST_FILE)) ? root : join(root, 'dist');
+
   const manifest = await assertValid(directory);
+
   console.warn(`✓ ${manifest.id}@${manifest.version} 有效`);
 }
 
@@ -89,7 +96,9 @@ async function link(dir: string | undefined) {
   const root = pluginRoot(dir);
   const dist = join(root, 'dist');
   const manifest = await assertValid(dist);
+
   assertExternal(manifest, '链接到用户插件目录');
+
   const target = join(userPluginsDirectory(), manifest.id);
   const existing = await lstat(target).catch(() => undefined);
 
@@ -102,7 +111,7 @@ async function link(dir: string | undefined) {
   }
 
   await mkdir(dirname(target), { recursive: true });
-  // Junctions need no elevated rights on Windows; other platforms ignore the type.
+  /* 在 Windows 上创建 junction 不需要提权；其他平台会忽略该 type */
   await symlink(dist, target, 'junction');
   console.warn(`✓ ${target} → ${await readlink(target)}`);
 }
@@ -124,8 +133,8 @@ async function collect(directory: string, base = directory): Promise<Record<stri
 }
 
 /**
- * Build (unless `build: false`) and zip `dist/` into `<id>-<version>.zip`. The archive root is
- * the plugin directory itself, which is what the app's installer expects.
+ * 构建（除非 `build: false`）并把 `dist/` 打成 `<id>-<version>.zip`
+ * 压缩包根目录就是 plugin 目录本身，这也是应用安装器所期望的结构
  */
 export async function packPlugin(
   dir: string,
@@ -139,8 +148,10 @@ export async function packPlugin(
       : await buildPlugin(root, { logLevel: options.logLevel });
 
   assertExternal(manifest, '打包安装');
+
   const output = join(root, `${manifest.id}-${manifest.version}.zip`);
   const files = await collect(join(root, 'dist'));
+
   await writeFile(output, zipSync(files, { level: 9 }));
 
   return { manifest, output };
@@ -148,6 +159,7 @@ export async function packPlugin(
 
 async function pack(dir: string | undefined, build: boolean) {
   const { output } = await packPlugin(dir ?? '.', { build });
+
   console.warn(`✓ ${relative(process.cwd(), output)}，可在 Hysilens 插件面板中「安装插件」`);
 }
 
@@ -268,6 +280,10 @@ export default definePlugin<typeof config>({
   console.warn(`✓ 已创建 ${relative(process.cwd(), root) || '.'}，运行 hysilens dev 开始开发`);
 }
 
+/**
+ * 从 `argv`（不含 node 与脚本路径）执行一条命令，返回进程退出码
+ * 用法错误与 `--help` 输出到 stderr
+ */
 export async function main(argv: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
     args: argv,

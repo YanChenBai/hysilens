@@ -1,11 +1,17 @@
 import type { Snapshot } from '@hysilens/protocol';
 import { Music } from 'kubai-icons-react';
 
+/**
+ * 紧凑的正在播放信息，带连接指示器
+ *
+ * @param connected event socket 是否打开；决定圆点颜色与 tooltip
+ */
 export function NowPlaying({
   snapshot,
   connected,
 }: {
   snapshot: Snapshot | null;
+
   connected: boolean;
 }) {
   return (

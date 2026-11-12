@@ -2,6 +2,9 @@ import { Button, FieldDescription, FieldError } from '@hysilens/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 
+/**
+ * 把酷狗播放诊断报告导出到用户选择的文件
+ */
 export function KugouDiagnostics() {
   const report = useMutation({
     mutationFn: async () => {

@@ -14,7 +14,7 @@ export default defineConfig({
   staged: { '*': 'vp check --fix' },
   run: {
     cache: true,
-    // Workspace-wide checks only; app, plugin and devtools tasks live in their own packages.
+    /* 仅放工作区级检查；app、plugin 和 devtools 的任务在各自 package 内 */
     tasks: {
       'check:types': { command: 'tsc --noEmit', cache: false },
       'check:native': {

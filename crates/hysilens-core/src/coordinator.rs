@@ -1,3 +1,5 @@
+//! 把 adapter 采样归约为 overlay UI 渲染所用的单个 snapshot
+
 use crate::protocol::{Snapshot, VERSION};
 use crate::{
     model::Catalog,
@@ -6,15 +8,25 @@ use crate::{
 };
 use std::{collections::HashMap, sync::Arc};
 
+/// 把 adapter 采样归约为发布给客户端的 snapshot
+///
+/// 选择规则都在这里：平台顺序决定自动匹配，手动 [`Coordinator::select`] 会覆盖它，
+/// 直到歌曲变化；`generation` 每次换歌恰好递增一次，从而能拒绝过期的选择
 pub struct Coordinator {
+    /// 当前 snapshot；所有者发布它的克隆并自行递增 `state.seq`
     pub state: Snapshot,
+
     catalogs: HashMap<Source, Catalog>,
+
     platforms: Vec<Descriptor>,
+
     manual_key: Option<String>,
+
     embedded_documents: HashMap<Source, Option<Arc<Document>>>,
 }
 
 impl Coordinator {
+    /// 为一个 server 进程创建 coordinator；`epoch` 标识该进程
     pub fn new(epoch: String, platforms: Vec<Descriptor>) -> Self {
         Self {
             state: Snapshot {
@@ -41,17 +53,20 @@ impl Coordinator {
         }
     }
 
+    /// 合并一次 playback 采样，并在播放曲目变化时重新解析
+    ///
+    /// 曲目变化会开启新的 generation 并清除手动选择；同一曲目只有上报了新的时长或
+    /// 歌词身份时才会重新执行解析
     pub fn playback(&mut self, playback: Playback) {
         let session = choose_session(&playback, self.state.source, &self.platforms).cloned();
-
         let has_changed = identity(self.state.session.as_ref()) != identity(session.as_ref());
-
         let duration_changed = self
             .state
             .session
             .as_ref()
             .and_then(|session| session.duration_ms)
             != session.as_ref().and_then(|session| session.duration_ms);
+
         let lyric_identity_changed = self
             .state
             .session
@@ -70,11 +85,12 @@ impl Coordinator {
 
             self.resolve();
         } else if (duration_changed || lyric_identity_changed) && self.manual_key.is_none() {
-            // 歌曲信息与时间轴可能分批到达，不等待目录变化才重新消歧。
+            // 曲目元数据与时间轴可能分几次采样到达，因此这里重试解析而不用等 catalog 变化
             self.resolve();
         }
     }
 
+    /// 保存本轮上报的内嵌歌词 document，然后处理 `playback`
     pub fn sample(&mut self, playback: Playback, adapters: Vec<AdapterState>) {
         self.embedded_documents = adapters
             .into_iter()
@@ -92,6 +108,7 @@ impl Coordinator {
         }
     }
 
+    /// 切换跟随的平台并忘记任何手动选择
     pub fn source(&mut self, source: Source) {
         self.state.source = source;
 
@@ -102,6 +119,7 @@ impl Coordinator {
         self.resolve();
     }
 
+    /// 替换某个平台缓存的 catalog 并重新解析歌词
     pub fn catalog(&mut self, source: Source, catalog: Catalog) {
         self.catalogs.insert(source, catalog);
 
@@ -110,6 +128,7 @@ impl Coordinator {
         self.resolve();
     }
 
+    /// 按平台注册顺序把所有平台的 catalog 合并成一个
     pub fn all_catalogs(&self) -> Catalog {
         let mut result = Catalog::default();
 
@@ -133,6 +152,11 @@ impl Coordinator {
             .copied()
     }
 
+    /// 为当前歌曲锁定 cache 条目 `key`，或传 `None` 恢复自动匹配
+    ///
+    /// # Errors
+    /// `generation` 已不是当前值、没有歌曲在播放、该平台不使用 cache catalog，
+    /// 或 `key` 不在该 catalog 中时失败
     pub fn select(&mut self, generation: u64, key: Option<String>) -> anyhow::Result<()> {
         anyhow::ensure!(
             generation == self.state.generation && self.state.session.is_some(),
@@ -241,7 +265,7 @@ fn choose_session<'a>(
 
 fn identity(session: Option<&Session>) -> Option<(&str, &str, &str, &str)> {
     session.map(|session| {
-        // Native identity detects same-title versions and ignores delayed SMTC text updates.
+        // 原生身份能识别同名不同版本，并忽略 SMTC 文本的延迟更新
         if let Some(track_id) = session.track_id.as_deref() {
             return (session.source_id.as_str(), track_id, "", "");
         }
@@ -262,8 +286,10 @@ mod tests {
     #[test]
     fn native_identity_resets_same_title_selection_and_refreshes_lyric_recommendations() {
         use crate::model::{Entry, LyricMatch};
+
         let mut coordinator =
             Coordinator::new("test".into(), vec![crate::platforms::kugou::DESCRIPTOR]);
+
         let entries = [1, 2]
             .into_iter()
             .map(|id| Entry {
@@ -282,6 +308,7 @@ mod tests {
                 }),
             })
             .collect();
+
         coordinator.catalog(
             Source::Kugou,
             Catalog {
@@ -289,6 +316,7 @@ mod tests {
                 issues: vec![],
             },
         );
+
         let sample = |queue_item_id: i32, recommend_krc_id: u32, artist: &str| Playback {
             sessions: vec![Session {
                 source_id: "kugou".into(),
@@ -304,22 +332,33 @@ mod tests {
             }],
             ..Default::default()
         };
+
         coordinator.playback(sample(42, 1, "Singer"));
+
         let generation = coordinator.state.generation;
+
         assert_eq!(coordinator.state.document.as_ref().unwrap().id, "1");
+
         coordinator.playback(sample(42, 2, "Singer"));
+
         assert_eq!(coordinator.state.document.as_ref().unwrap().id, "2");
         assert_eq!(coordinator.state.generation, generation);
+
         coordinator.select(generation, Some("1".into())).unwrap();
         coordinator.playback(sample(42, 2, "Singer、Collaborator"));
+
         assert_eq!(coordinator.state.lyrics_status, "manual");
         assert_eq!(coordinator.state.generation, generation);
+
         coordinator.playback(sample(43, 2, "Singer、Collaborator"));
+
         assert_eq!(coordinator.state.generation, generation + 1);
         assert_eq!(coordinator.state.lyrics_status, "matchedMemoryHash");
         assert_eq!(coordinator.state.document.as_ref().unwrap().id, "2");
         assert!(coordinator.select(generation, Some("1".into())).is_err());
+
         coordinator.playback(sample(42, 1, "Singer"));
+
         assert_eq!(coordinator.state.generation, generation + 2);
         assert_eq!(coordinator.state.document.as_ref().unwrap().id, "1");
     }
@@ -353,6 +392,7 @@ mod tests {
             ],
             ..Default::default()
         };
+
         let descriptors = crate::platforms::test_descriptors();
         assert_eq!(
             choose_session(&playback, Source::Auto, &descriptors)
@@ -378,7 +418,6 @@ mod tests {
         };
 
         let qq = crate::platforms::qq_music::DESCRIPTOR;
-
         let playback = Playback {
             sessions: vec![
                 Session {
@@ -435,7 +474,6 @@ mod tests {
     #[test]
     fn prioritizes_wesing_and_switches_sources_without_leaking_documents() {
         let mut coordinator = Coordinator::new("test".into(), crate::platforms::test_descriptors());
-
         let playback = Playback {
             sessions: vec![
                 Session {
@@ -518,7 +556,6 @@ mod tests {
     #[test]
     fn clears_memory_lyrics_on_failure_and_replaces_them_without_a_title_change() {
         let mut coordinator = Coordinator::new("test".into(), crate::platforms::test_descriptors());
-
         let mut playback = Playback {
             sessions: vec![Session {
                 source_id: "WeSing.exe".into(),
@@ -556,7 +593,6 @@ mod tests {
     #[test]
     fn rejects_selection_for_an_old_song_and_clears_document_on_switch() {
         let mut coordinator = Coordinator::new("test".into(), crate::platforms::test_descriptors());
-
         let playback = |title: &str| Playback {
             sessions: vec![Session {
                 source_id: "QQMusic.exe".into(),
@@ -584,7 +620,6 @@ mod tests {
         use crate::{model::Entry, model::Metadata};
 
         let mut coordinator = Coordinator::new("test".into(), crate::platforms::test_descriptors());
-
         let entries = [0, 232]
             .into_iter()
             .map(|seconds| {

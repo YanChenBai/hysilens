@@ -48,6 +48,7 @@ describe('ignored lyrics', () => {
 
   it('removes selected content and overlapping secondary spans without blank placeholders', () => {
     const result = ignoreLyrics(document, [lyricLineId(document.tracks[0]!.lines[1]!)]);
+
     expect(result.intervals).toEqual([{ start: 1000, end: 2000 }]);
     expect(result.document.tracks[0]!.lines.map(line => line.text)).toEqual(['演唱句', '下一句']);
     expect(result.document.tracks[1]!.lines).toEqual([
@@ -60,8 +61,10 @@ describe('ignored lyrics', () => {
 
   it('leaves unselected lyrics alone and does not apply stale selections to changed rows', () => {
     expect(ignoreLyrics(document, []).document).toBe(document);
+
     const stale = lyricLineId({ ...document.tracks[0]!.lines[1]!, text: '另一句' });
     expect(ignoreLyrics(document, [stale]).document).toBe(document);
+
     const last = ignoreLyrics(document, [lyricLineId(document.tracks[0]!.lines[2]!)]);
     expect(last.intervals).toEqual([{ start: 2000, end: Infinity }]);
     expect(last.document.tracks[0]!.lines.map(line => line.text)).toEqual(['演唱句', '吉他：某某']);
@@ -69,6 +72,7 @@ describe('ignored lyrics', () => {
 
   it('removes consecutive leading credits so upcoming lyrics can be laid out immediately', () => {
     const result = ignoreLyrics(document, document.tracks[0]!.lines.slice(0, 2).map(lyricLineId));
+
     expect(result.document.tracks[0]!.lines).toEqual([document.tracks[0]!.lines[2]]);
     expect(result.document.tracks[1]!.lines).toEqual([
       { startMs: 2000, endMs: null, text: 'Translation', tokens: [] },

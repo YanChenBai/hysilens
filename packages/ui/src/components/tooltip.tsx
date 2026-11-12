@@ -13,7 +13,7 @@ import type { WithClassName } from '../types';
 export const TooltipProvider = BaseTooltip.Provider;
 
 /**
- * 提示状态容器；应放在 TooltipProvider 内。
+ * 提示状态容器；应放在 `TooltipProvider` 内
  * @example
  * ```tsx
  * <TooltipProvider>
@@ -36,7 +36,9 @@ export const Tooltip = BaseTooltip.Root;
 export const TooltipTrigger = BaseTooltip.Trigger;
 
 export type TooltipContentProps = WithClassName<BaseTooltip.Popup.Props> & {
-  /** 弹层相对触发器的方向。 */
+  /**
+   * 弹层相对触发器的方向
+   */
   side?: BaseTooltip.Positioner.Props['side'];
 };
 

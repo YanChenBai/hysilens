@@ -1,3 +1,8 @@
+//! QRC cache 扫描与匹配
+//!
+//! cache filename 编码了 artist、title、duration 和 album，因此即使内嵌 metadata 与
+//! Windows 上报的 media session 不一致，document 仍然可以被匹配
+
 use super::lyrics;
 #[cfg(test)]
 use crate::model::Document;
@@ -7,12 +12,19 @@ use sha2::{Digest, Sha256};
 use std::{fs, path::Path, sync::Arc};
 
 impl Catalog {
+    /// 加载 `path` 下所有 `*_qm.qrc` 文件，按 filename 排序
+    ///
+    /// 单个文件 decode 失败会记录到 [`Catalog::issues`]，而不是中断整次 scan，
+    /// 因此一个损坏的下载不会掩盖 cache 中其余内容
+    ///
+    /// # Errors
+    ///
+    /// 目录本身无法列出时返回错误
     pub fn read(path: &Path) -> anyhow::Result<Self> {
         let mut catalog = Self::default();
 
         for entry in fs::read_dir(path)? {
             let path = entry?.path();
-
             let filename = path
                 .file_name()
                 .unwrap_or_default()
@@ -48,6 +60,7 @@ impl Catalog {
         Ok(catalog)
     }
 
+    /// 标题或 filename 与 session title 匹配的 cached 条目
     pub fn candidates(&self, session: &Session) -> Vec<Entry> {
         if session.title.trim().is_empty() {
             return Vec::new();
@@ -60,6 +73,12 @@ impl Catalog {
             .collect()
     }
 
+    /// 在证据无歧义时挑出与 session 匹配的 cached 条目
+    ///
+    /// session 没有 artist、没有候选匹配，或仍有多个不同 document 同样可信时返回 `None`
+    ///
+    /// content 相同的重复文件会先合并，并优先选择 cached duration 与播放时长
+    /// 相差 1500 ms 以内的条目
     pub fn automatic<'a>(&self, candidates: &'a [Entry], session: &Session) -> Option<&'a Entry> {
         if session.artist.trim().is_empty() {
             return None;
@@ -72,15 +91,14 @@ impl Catalog {
 
         let first = *matches.first()?;
 
-        // 不同文件名可能保存完全相同的原文、译文、罗马音和时间轴。
-        // 只对已通过完整身份校验的记录按内容摘要判断是否存在真实歧义。
+        // 不同文件名可能保存完全相同的原文、译文、罗马音和时间轴
+        // 只对已通过完整身份校验的记录按内容摘要判断是否存在真实歧义
         if matches
             .iter()
             .all(|entry| entry.document.id == first.document.id)
         {
             return matches.into_iter().max_by_key(|entry| {
                 let duration = filename_duration(entry, session);
-
                 let is_close = duration
                     .zip(session.duration_ms)
                     .is_some_and(|(cache, playback)| (cache - playback).abs() <= 1500.0);
@@ -89,7 +107,7 @@ impl Catalog {
             });
         }
 
-        // QQ 的时间轴可能仅表示试听范围。时长只用于多个完整身份候选之间的消歧。
+        // QQ 的时间轴可能仅表示试听范围，时长只用于多个完整身份候选之间的消歧
         let mut by_duration = matches.into_iter().filter(|entry| {
             matches_filename(entry, session)
                 && filename_duration(entry, session)
@@ -103,19 +121,18 @@ impl Catalog {
     }
 }
 
+/// 为 `session` 解析 document，允许手动传入的 `key` 覆盖自动匹配
+///
+/// 匹配存在歧义时返回 `document: None`，同时给出非空的候选列表
 pub fn resolve(
     catalog: &Catalog,
     session: &Session,
     key: Option<&str>,
 ) -> super::super::CatalogResolution {
     let candidates = catalog.candidates(session);
-
     let manual = key.and_then(|key| catalog.entries.iter().find(|entry| entry.key == key));
-
     let automatic = catalog.automatic(&candidates, session);
-
     let entry = manual.or(automatic);
-
     let status = if let Some(entry) = entry {
         if manual.is_some() {
             "manual"
@@ -137,10 +154,15 @@ pub fn resolve(
     }
 }
 
+/// 判断 cache filename 是否编码了 session 的 artist、title、duration 和 album
+///
+/// duration 以毫秒比较，容差由调用方决定；可解析的 filename 只要各字段一致
+/// 就视为有效身份，即使 QRC header 中的 metadata 不同
 pub fn matches_filename(entry: &Entry, session: &Session) -> bool {
     filename_duration(entry, session).is_some()
 }
 
+/// 判断 title、artist 集合和 album 在空白与大小写归一后是否一致
 pub fn matches_metadata(entry: &Entry, session: &Session) -> bool {
     same(&entry.title, &session.title)
         && same_artists(&entry.artist, &session.artist)
@@ -154,7 +176,7 @@ fn filename_duration(entry: &Entry, session: &Session) -> Option<f64> {
         return None;
     }
 
-    // 标题和专辑自身也可能含有分隔符；逐个验证标题边界，不按固定四段截断。
+    // 标题和专辑自身也可能含有分隔符；逐个验证标题边界，不按固定四段截断
     for (boundary, _) in remainder.match_indices(" - ") {
         if !same_filename_text(&remainder[..boundary], &session.title) {
             continue;
@@ -185,8 +207,8 @@ fn same_filename_text(cached: &str, media: &str) -> bool {
         return true;
     }
 
-    // QQ 缓存将 Windows 不可用字符及句点替换为下划线。
-    // 只投影媒体元数据到文件名形式，不把下划线反向猜成标点，也不改歌词内部元数据。
+    // QQ 缓存将 Windows 不可用字符及句点替换为下划线
+    // 只投影媒体元数据到文件名形式，不把下划线反向猜成标点，也不改歌词内部元数据
     let projected: String = media
         .chars()
         .map(|character| {
@@ -207,7 +229,7 @@ fn same_filename_text(cached: &str, media: &str) -> bool {
 }
 
 fn normalized_text(value: &str) -> String {
-    // 折叠包括 NBSP、全角空格在内的 Unicode 空白，保留词间间隔和版本文字。
+    // 折叠包括 NBSP、全角空格在内的 Unicode 空白，保留词间间隔和版本文字
     value
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -219,7 +241,7 @@ fn same_artists(left: &str, right: &str) -> bool {
     let normalize = |value: &str| {
         let mut artists: Vec<_> = value.split(['/', '_']).map(normalized_text).collect();
 
-        // 单个名字中的前后下划线保留；只归一有完整成员的多歌手分隔。
+        // 单个名字中的前后下划线保留；只归一有完整成员的多歌手分隔
         if artists.iter().any(String::is_empty) {
             return vec![normalized_text(value)];
         }
@@ -560,7 +582,6 @@ mod tests {
         assert!(catalog.automatic(&candidates, &session).is_none());
 
         let named = vec![entry("named-album", "Studio")];
-
         let missing = Session {
             title: "A".into(),
             artist: "Singer".into(),

@@ -3,10 +3,26 @@ import { parseOverlayConfig } from '@hysilens/protocol/config';
 import { useEffect, useSyncExternalStore } from 'react';
 
 export interface SessionState {
+  /**
+   * 服务端最新的 snapshot，首次更新前为 null
+   */
   snapshot: Snapshot | null;
+
   connection: 'connecting' | 'connected' | 'disconnected';
+
+  /**
+   * socket 或服务端上报的最近一次错误；下一个 snapshot 会清空它
+   */
   error: string;
+
+  /**
+   * 最近一次 snapshot 的 `performance.now()` 时间戳，单位毫秒
+   */
   lastStateAt: number;
+
+  /**
+   * 服务端 clock 减本地 clock，单位毫秒；未测出往返时间前为 null
+   */
   clockOffset: number | null;
 }
 
@@ -18,7 +34,9 @@ let state: SessionState = {
   clockOffset: null,
 };
 
-/** `resync`: the socket (re)connected, so notifications may have been missed. */
+/**
+ * `resync`：socket 重新连接，可能漏掉了部分通知
+ */
 export type PluginEvent =
   | { kind: 'plugins' }
   | { kind: 'pluginConfig'; id: string }
@@ -62,7 +80,9 @@ function emitPlugin(event: PluginEvent) {
   pluginListeners.forEach(listener => listener(event));
 }
 
-/** Plugin catalog and config change notifications pushed over the event socket. */
+/**
+ * 通过 event socket 推送的 plugin catalog 与 config 变更通知
+ */
 export function onPluginEvent(listener: (event: PluginEvent) => void): () => void {
   pluginListeners.add(listener);
 
@@ -174,7 +194,9 @@ function connect() {
   };
 }
 
-/** Keep the event socket open without subscribing to session state updates. */
+/**
+ * 保持 event socket 打开，但不订阅 session 状态更新
+ */
 export function acquireSession(): () => void {
   return acquire();
 }

@@ -11,11 +11,21 @@ import type { PluginCatalog, PluginConfig } from '../lib/api';
 import { FooterActions } from './FooterActions';
 import { ThemeField } from './ThemeField';
 
+/**
+ * 面向单个 plugin 的 schema 驱动主题编辑器
+ *
+ * 把 JSON 草稿放在 query 缓存里，切换标签页不会丢失编辑；保存时按最新安装的
+ * manifest 校验；在保存按钮旁显示 dirty 状态
+ *
+ * @param plugin 当前活跃的 manifest；其 `revision` 决定 config query 的范围
+ * @param initial 已存储的 config 以及用于构建字段的 schema
+ */
 export function ThemeEditor({
   plugin,
   initial,
 }: {
   plugin: PluginManifest;
+
   initial: PluginConfig;
 }) {
   const queries = useQueryClient();
@@ -32,10 +42,13 @@ export function ThemeEditor({
   try {
     values = JSON.parse(draft);
   } catch {
-    /* Keep invalid JSON editable until validation. */
+    /* 校验之前允许继续编辑非法 JSON */
   }
 
-  // The schema already contains only declared features, so every property is editable.
+  /*
+   * schema 只声明可配置项，因此每个顶层属性都映射到一个控件
+   * 不支持的类型回退为原始 JSON 编辑
+   */
   const fields = Object.entries(initial.schema.properties ?? {}) as Array<
     [string, AnySchemaObject]
   >;
@@ -76,8 +89,10 @@ export function ThemeEditor({
 
       return config;
     },
+
     onSuccess: (config, submittedDraft) => {
       const saved = JSON.stringify(config, null, 2);
+
       setSavedDraft(saved);
       setDraft(current => (current === submittedDraft ? saved : current));
       queries.setQueryData<string>(['theme-draft', plugin.id], current =>
@@ -86,6 +101,7 @@ export function ThemeEditor({
       queries.setQueryData<PluginConfig>(['config-editor', plugin.id, plugin.revision], current =>
         current ? { ...current, config } : current,
       );
+
       setMessage(`已保存 ${plugin.id}.json`);
       void queries.invalidateQueries({ queryKey: ['plugin-config', plugin.id] });
       void queries.invalidateQueries({ queryKey: ['plugins'] });

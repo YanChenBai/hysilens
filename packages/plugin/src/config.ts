@@ -1,6 +1,7 @@
 /**
- * Build-time plugin description. Evaluated only by `hysilens build`; plugin runtime code may
- * reference it with `import type` alone, so zod never reaches the iframe bundle.
+ * 构建期的 plugin 描述
+ * 只有 `hysilens build` 会求值它；plugin 运行时代码只能用 `import type` 引用，
+ * 这样 zod 就不会被打进 iframe 包
  */
 import { z } from 'zod';
 
@@ -15,14 +16,40 @@ type Shape = Record<string, Field>;
 
 const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
+/**
+ * 构建期的 plugin 声明；在变成 manifest 之前由 `defineConfig` 校验
+ */
 export interface ConfigInput<S extends Shape, F extends PluginFeatures> {
+  /**
+   * plugin id，会按 `PLUGIN_ID_PATTERN` 校验
+   */
   id: string;
+
+  /**
+   * plugin 面板中显示的显示名，保存前会去掉首尾空白
+   */
   name: string;
+
   description?: string;
+
+  /**
+   * 期望的 iframe 尺寸；宽高都必须是正整数
+   */
   viewport?: PluginViewport;
-  /** Runtime entry relative to the plugin root. */
+
+  /**
+   * 相对 plugin 根目录的 runtime 入口，默认 `src/index.ts`
+   */
   entry?: string;
+
+  /**
+   * 要启用的能力；每一项还会注入对应的 config 字段
+   */
   features?: F;
+
+  /**
+   * plugin 自定义字段；每个字段都必须有默认值
+   */
   config: S;
 }
 
@@ -32,30 +59,54 @@ type Enabled<F, Key extends keyof PluginFeatures> = F extends { [K in Key]: true
 
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
-/** Feature fields visible to the plugin; `scale` is applied by the host and stays hidden. */
+/**
+ * plugin 可见的 feature 字段；`scale` 由 host 应用并保持隐藏
+ */
 export type FeatureConfig<F> = (Enabled<F, 'font'> extends true ? { fontFamily: string } : {}) &
   (Enabled<F, 'reveal'> extends true ? { revealMode: 'word' | 'line' } : {}) &
   (Enabled<F, 'romanization'> extends true ? { romanization: boolean } : {}) &
   (Enabled<F, 'translation'> extends true ? { translation: boolean } : {});
 
+/**
+ * plugin 收到的带类型 config：解析后的字段值，加上所有已启用 feature 的字段
+ */
 export type ConfigOutput<S extends Shape, F> = Simplify<
   z.output<z.ZodObject<S>> & FeatureConfig<F>
 >;
 
+/**
+ * `defineConfig` 产出的只读描述；CLI 读取它，plugin 代码只引用其类型
+ */
 export interface ConfigDefinition<Output> extends ConfigCarrier<Output> {
   readonly kind: 'hysilens:config';
+
   readonly id: string;
+
   readonly name: string;
+
   readonly description?: string;
+
   readonly viewport?: PluginViewport;
+
+  /**
+   * 按声明得到的入口，已套用默认值
+   */
   readonly entry: string;
+
+  /**
+   * 声明 features 的副本，之后重新赋值输入不会改变任何东西
+   */
   readonly features: PluginFeatures;
-  /** Draft 2020-12 JSON Schema of the stored configuration, injected fields included. */
+
+  /**
+   * 存储配置的 Draft 2020-12 JSON Schema，包含注入的字段
+   */
   readonly configSchema: Record<string, unknown>;
 }
 
 interface Labelled {
   title: string;
+
   description?: string;
 }
 
@@ -68,6 +119,9 @@ function meta(options: Labelled, extra: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * 渲染为滑块的数值范围；`step` 决定滑块步长，`int` 拒绝小数值
+ */
 export function number(
   options: Labelled & { min: number; max: number; default: number; step?: number; int?: boolean },
 ) {
@@ -80,6 +134,9 @@ export function number(
     .meta(meta(options, { 'x-hysilens-control': 'slider', 'x-hysilens-step': options.step }));
 }
 
+/**
+ * 渲染为取色器的不透明颜色，取值为 `#rrggbb`
+ */
 export function color(options: Labelled & { default: string }) {
   return z
     .string()
@@ -88,10 +145,16 @@ export function color(options: Labelled & { default: string }) {
     .meta(meta(options, { 'x-hysilens-control': 'color' }));
 }
 
+/**
+ * 渲染为开关的布尔值
+ */
 export function toggle(options: Labelled & { default: boolean }) {
   return z.boolean().default(options.default).meta(meta(options));
 }
 
+/**
+ * 单行文本；`maxLength` 默认为 200 个字符
+ */
 export function text(options: Labelled & { default: string; maxLength?: number }) {
   return z
     .string()
@@ -100,7 +163,9 @@ export function text(options: Labelled & { default: string; maxLength?: number }
     .meta(meta(options));
 }
 
-/** Choice between string values; `options` maps each value to its label. */
+/**
+ * 在若干字符串值中选择；`options` 把每个值映射到它的标签
+ */
 export function select<const Options extends Record<string, string>>(
   options: Labelled & { options: Options; default: keyof Options & string },
 ) {
@@ -115,6 +180,9 @@ export function select<const Options extends Record<string, string>>(
     .meta(meta(options, { 'x-hysilens-enum-labels': options.options }));
 }
 
+/**
+ * 字体族名称；`families` 仅作为候选提供，任何名称都仍然有效
+ */
 export function font(options: Labelled & { default: string; families?: string[] }) {
   return z
     .string()
@@ -179,7 +247,9 @@ const REJECTED_CHECKS: Record<string, string> = {
   overwrite: 'trim / toLowerCase 等改写',
 };
 
-/** Reject constructs that JSON Schema would silently drop, so host validation matches zod. */
+/**
+ * 拒绝 JSON Schema 会静默丢弃的构造，使 host 的校验与 zod 保持一致
+ */
 function assertRepresentable(schema: Field, path: string): void {
   const def = (schema as unknown as { _zod: { def: Record<string, unknown> } })._zod.def;
   const type = def.type as string;
@@ -240,6 +310,11 @@ function assertInput(input: ConfigInput<Shape, PluginFeatures>): void {
   }
 }
 
+/**
+ * 校验声明并把它转成 manifest 源
+ * 遇到非法 id、空 name、非整数 viewport、没有默认值的字段、被 features 覆盖的字段名，
+ * 或 JSON Schema 无法表达的校验时抛错
+ */
 export function defineConfig<const S extends Shape, const F extends PluginFeatures = {}>(
   input: ConfigInput<S, F>,
 ): ConfigDefinition<ConfigOutput<S, F>> {
@@ -277,6 +352,9 @@ export function defineConfig<const S extends Shape, const F extends PluginFeatur
   };
 }
 
+/**
+ * 判断 `value` 是否为 `defineConfig` 的结果，而不是其他任意默认导出
+ */
 export function isConfigDefinition(value: unknown): value is ConfigDefinition<unknown> {
   return (
     typeof value === 'object' &&

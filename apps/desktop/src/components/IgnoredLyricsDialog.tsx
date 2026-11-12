@@ -14,13 +14,22 @@ import { useState } from 'react';
 import { lyricLineId, lyricSongId } from '../lib/ignored-lyrics';
 import { readSession, sendOverlay } from '../lib/session';
 
+/**
+ * 打开按歌曲划分的列表、用于从 overlay 中移除歌词行的按钮
+ *
+ * @param document 当前歌词 document；变化时会重新挂载选择对话框
+ * @param session 用于推导稳定 song id 的播放器 session
+ * @param disabled host 未连接时禁止打开
+ */
 export function IgnoredLyricsDialog({
   document,
   session,
   disabled,
 }: {
   document: LyricDocument;
+
   session: Session | null;
+
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -70,7 +79,9 @@ function LyricSelection({
   onClose,
 }: {
   document: LyricDocument;
+
   songId: string;
+
   onClose: () => void;
 }) {
   const [selected, setSelected] = useState(

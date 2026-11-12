@@ -32,18 +32,24 @@ export const buttonVariants = cva(
 
 export type ButtonProps = Omit<ComponentProps<typeof AnimatedButton>, 'className' | 'children'> &
   VariantProps<typeof buttonVariants> & {
-    /** 组件内容。 */
+    /**
+     * 按钮内容
+     */
     children?: ReactNode;
 
-    /** 追加到组件根节点的样式类。 */
+    /**
+     * 追加到组件根节点的样式类
+     */
     className?: string;
 
-    /** 显示加载状态并禁用按钮；默认 false。 */
+    /**
+     * 显示加载状态并禁用按钮；默认 false
+     */
     isLoading?: boolean;
   };
 
 /**
- * 带悬停和按压反馈的按钮；render 可组合 Base UI 触发器。
+ * 带悬停和按压反馈的按钮；`render` 可组合 Base UI 触发器
  * @example
  * ```tsx
  * <Button variant="outline" onClick={save}>

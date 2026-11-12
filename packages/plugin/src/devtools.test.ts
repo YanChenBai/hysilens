@@ -8,12 +8,17 @@ import { DEVTOOLS_BASE, devtoolsMiddleware, ensureDevtools } from './devtools';
 
 interface Reply {
   status: number;
+
   headers: Record<string, string>;
+
   body: string;
+
   forwarded: boolean;
 }
 
-/** Drive the connect handler with minimal request/response doubles; no port is opened. */
+/**
+ * 用最小的 request/response 替身驱动 connect handler，不打开任何 port
+ */
 async function request(handler: ReturnType<typeof devtoolsMiddleware>, url: string) {
   return new Promise<Reply>(resolve => {
     const reply: Reply = { status: 200, headers: {}, body: '', forwarded: false };
@@ -43,7 +48,9 @@ async function request(handler: ReturnType<typeof devtoolsMiddleware>, url: stri
 describe('devtools', () => {
   it('serves the bundled UI with its assets', async () => {
     const dist = ensureDevtools();
+
     expect(dist).toBe(fileURLToPath(new URL('../dist/devtools/', import.meta.url)));
+
     const handler = devtoolsMiddleware(dist);
 
     const index = await request(handler, '/?from=test');
@@ -52,6 +59,7 @@ describe('devtools', () => {
 
     const [script] = (await readdir(join(dist, 'assets'))).filter(name => name.endsWith('.js'));
     const asset = await request(handler, `${DEVTOOLS_BASE}assets/${script}`);
+
     expect(asset.headers['content-type']).toContain('javascript');
     expect(asset.body.length).toBeGreaterThan(1000);
   }, 120_000);

@@ -33,7 +33,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Host connected to a real runtime through a MessageChannel, as in the iframe. */
+/**
+ * 通过 MessageChannel 连接到真实 runtime 的 host，与 iframe 中的情形一致
+ */
 function connect<Config>(plugin: Plugin<Config>, state = initial()) {
   const statuses: HostStatus[] = [];
   let now = 0;
@@ -63,7 +65,9 @@ function connect<Config>(plugin: Plugin<Config>, state = initial()) {
   };
 }
 
-/** Host whose plugin side only records messages, for wire-level assertions. */
+/**
+ * plugin 侧只记录消息的 host，用于 wire 层面的断言
+ */
 function recordHost(options: Partial<ConstructorParameters<typeof PluginHost>[0]> = {}) {
   const received: HostMessage[] = [];
   let peer: MessagePort | undefined;
@@ -106,6 +110,7 @@ describe('lifecycle', () => {
     );
 
     await vi.waitFor(() => expect(host.status.phase).toBe('ready'));
+
     expect(order).toEqual(['setup:#fff', 'mounted']);
   });
 
@@ -159,6 +164,7 @@ describe('lifecycle', () => {
 
     await vi.waitFor(() => expect(host.status.phase).toBe('ready'));
     await host.dispose();
+
     expect(order).toEqual(['unmounted:false']);
     expect(signal?.aborted).toBe(true);
     expect(host.status.phase).toBe('disposed');
@@ -166,14 +172,19 @@ describe('lifecycle', () => {
 
   it('stops waiting for an unresponsive plugin', async () => {
     const { host } = recordHost({ disposeTimeoutMs: 10 });
+
     await host.dispose();
+
     expect(host.status.phase).toBe('disposed');
   });
 
   it('fails when the plugin never becomes ready', async () => {
     vi.useFakeTimers();
+
     const { host } = recordHost({ readyTimeoutMs: 100 });
+
     vi.advanceTimersByTime(100);
+
     expect(host.status).toEqual({ phase: 'error', error: '插件未在规定时间内就绪' });
   });
 });
@@ -193,6 +204,7 @@ describe('state updates', () => {
     );
 
     await vi.waitFor(() => expect(host.status.phase).toBe('ready'));
+
     host.setConfig({ color: '#000' });
     host.setLyrics(lyrics);
     host.setLyrics(lyrics);
@@ -200,6 +212,7 @@ describe('state updates', () => {
     host.setPlayback({ playing: true, visible: false });
 
     await vi.waitFor(() => expect(events).toHaveLength(3));
+
     expect(events).toEqual([
       ['config', '#fff', '#000'],
       ['lyrics', 'song', 'song'],
@@ -219,7 +232,9 @@ describe('state updates', () => {
     );
 
     await vi.waitFor(() => expect(host.status.phase).toBe('ready'));
+
     host.setConfig({ color: '#000' });
+
     await vi.waitFor(() => expect(host.status).toEqual({ phase: 'ready', error: '坏配置' }));
   });
 });
@@ -236,9 +251,12 @@ describe('clock', () => {
     'slews a %i ms correction without jumps or running backwards',
     correction => {
       let now = 0;
+
       const clock = createClock({ position: 1000, rate: 1 }, () => now);
+
       now = 500;
       clock.set({ position: 1500 + correction, rate: 1 });
+
       expect(clock.time()).toBe(1500);
 
       let previous = 1500;
@@ -250,7 +268,7 @@ describe('clock', () => {
         previous = current;
       }
 
-      // After the slew window the clock matches the authoritative timeline exactly.
+      /* slew 窗口结束后，clock 与权威时间线完全一致 */
       now = 1100;
       expect(clock.time()).toBeCloseTo(2100 + correction);
     },
@@ -258,7 +276,9 @@ describe('clock', () => {
 
   it('applies seeks, pauses and newly known positions immediately', () => {
     let now = 0;
+
     const clock = createClock({ position: null, rate: 0 }, () => now);
+
     clock.set({ position: 1000, rate: 1 });
     expect(clock.time()).toBe(1000);
 
@@ -269,6 +289,7 @@ describe('clock', () => {
     now = 200;
     clock.set({ position: 30_120, rate: 0 });
     expect(clock.time()).toBe(30_120);
+
     now = 900;
     expect(clock.time()).toBe(30_120);
   });
@@ -285,6 +306,7 @@ describe('clock', () => {
     host.syncClock({ position: null, rate: 0 });
 
     await vi.waitFor(() => expect(received.at(-1)?.kind).toBe('clock'));
+
     expect(clocks()).toEqual([
       { kind: 'clock', position: 1300, rate: 1 },
       { kind: 'clock', position: 1300, rate: 0 },
@@ -305,8 +327,11 @@ describe('clock', () => {
 
     await vi.waitFor(() => expect(host.status.phase).toBe('ready'));
 
-    // An accurate host never drifts; without heartbeats the plugin would freeze at +2000 ms
-    // until the next sync noticed. Sample between syncs, where a freeze is visible on screen.
+    /*
+     * 准确的 host 不会漂移；但缺少 heartbeat 时 plugin 会冻结在 +2000 ms，
+     * 直到下一次 sync 才发现
+     * 因此要在两次 sync 之间采样，此时冻结在屏幕上可见
+     */
     for (let elapsed = 250; elapsed <= 5000; elapsed += 250) {
       advance(250);
       expect(time?.()).toBe(1000 + elapsed);
@@ -326,6 +351,7 @@ describe('clock', () => {
     }
 
     await new Promise(resolve => setTimeout(resolve, 10));
+
     expect(received.filter(message => message.kind === 'clock')).toHaveLength(1);
   });
 
@@ -341,8 +367,10 @@ describe('clock', () => {
     );
 
     await vi.waitFor(() => expect(host.status.phase).toBe('ready'));
+
     advance(400);
     expect(time?.()).toBe(1400);
+
     host.syncClock({ position: 5000, rate: 0 });
     await vi.waitFor(() => expect(time?.()).toBe(5000));
   });

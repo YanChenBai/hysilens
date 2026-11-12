@@ -30,19 +30,25 @@ function seeded() {
 describe('invalidatePluginQueries', () => {
   it('refreshes only the catalog when plugins change', () => {
     const { queries, stale } = seeded();
+
     invalidatePluginQueries(queries, { kind: 'plugins' });
+
     expect(stale()).toEqual(['plugins']);
   });
 
   it('refreshes one plugin config in both the view and the editor', () => {
     const { queries, stale } = seeded();
+
     invalidatePluginQueries(queries, { kind: 'pluginConfig', id: 'tilted' });
+
     expect(stale()).toEqual(['config-editor:tilted:r1', 'plugin-config:tilted:r1']);
   });
 
   it('refreshes everything after reconnecting', () => {
     const { queries, stale } = seeded();
+
     invalidatePluginQueries(queries, { kind: 'resync' });
+
     expect(stale()).toHaveLength(5);
   });
 });

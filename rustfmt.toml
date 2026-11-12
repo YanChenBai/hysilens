@@ -14,5 +14,3 @@ reorder_modules = true
 merge_derives = true
 use_field_init_shorthand = true
 force_explicit_abi = true
-
-

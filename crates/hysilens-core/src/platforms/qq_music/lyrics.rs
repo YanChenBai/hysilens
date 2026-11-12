@@ -1,3 +1,8 @@
+//! QRC 文件 decode 与解析
+//!
+//! 同时处理 QMC1 混淆过的容器与解密后的 XML 或逐行 payload，
+//! 输出时间戳以毫秒为单位的 track
+
 use crate::model::{Document, Line, LyricTrack, Metadata, Token};
 use anyhow::{Context, ensure};
 use lyrics_core::{models::flatten_syllable_items, traits::LyricsDecrypter};
@@ -9,7 +14,7 @@ const MAGIC: &[u8] = &[
     0x98, 0x25, 0xb0, 0xac, 0xe3, 0x02, 0x83, 0x68, 0xe8, 0xfc, 0x6c,
 ];
 
-// 本地 QMC1 预处理改编自 jixunmoe-go/qrc，许可证见 THIRD_PARTY_NOTICES.md。
+// 本地 QMC1 预处理改编自 jixunmoe-go/qrc，许可证见 THIRD_PARTY_NOTICES.md
 const QMC_KEY: [u8; 128] = [
     0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52, 0xd8, 0xa1, 0x66, 0x62, 0x9f, 0x5b, 0x09, 0x00,
     0xc3, 0x5e, 0x95, 0x23, 0x9f, 0x13, 0x11, 0x7e, 0xd8, 0x92, 0x3f, 0xbc, 0x90, 0xbb, 0x74, 0x0e,
@@ -21,6 +26,11 @@ const QMC_KEY: [u8; 128] = [
     0xc3, 0x00, 0x09, 0x5b, 0x9f, 0x62, 0x66, 0xa1, 0xd8, 0x52, 0xf7, 0x67, 0x90, 0xca, 0xd6, 0x4a,
 ];
 
+/// 把一个 QRC 文件 decode 成 `original` 的 [`LyricTrack`]
+///
+/// # Errors
+///
+/// 文件超过 4 MiB、无法解密或不是 UTF-8 文本时返回错误
 pub fn decode(path: &Path) -> anyhow::Result<LyricTrack> {
     parse(&decode_text(path)?, "original")
 }
@@ -60,7 +70,6 @@ fn decode_text(path: &Path) -> anyhow::Result<String> {
 
 fn parse_data(plain: &str) -> anyhow::Result<lyrics_core::models::LyricsData> {
     let xml;
-
     let body = if plain.trim_start().starts_with('<') {
         xml = lyrics_parsers::xml_utils::create(plain).context("Invalid QRC XML")?;
 
@@ -72,18 +81,23 @@ fn parse_data(plain: &str) -> anyhow::Result<lyrics_core::models::LyricsData> {
     lyrics_parsers::parsers::parse_lyrics_auto(body).context("Unsupported lyric payload")
 }
 
+/// 解析解密后的 QRC 文本，可以是 XML envelope 或逐行 payload
+///
+/// 没有时间戳或文本为空的行会被丢弃，缺失的行结束时间由下一条 start 更晚的行
+/// 补上，从而保持 track 按 `start_ms` 排序
+///
+/// # Errors
+///
+/// payload 既不是 QRC XML envelope 也不是可识别的歌词格式时返回错误
 pub fn parse(plain: &str, kind: &str) -> anyhow::Result<LyricTrack> {
     let data = parse_data(plain)?;
-
     let mut lines: Vec<Line> = data
         .lines
         .unwrap_or_default()
         .into_iter()
         .filter_map(|line| {
             let start_ms = line.start_time()?;
-
             let end_ms = line.end_time();
-
             let text = line.text_from_any();
 
             if start_ms < 0 || text.trim().is_empty() {
@@ -97,7 +111,6 @@ pub fn parse(plain: &str, kind: &str) -> anyhow::Result<LyricTrack> {
                 .into_iter()
                 .filter_map(|token| {
                     let start = token.start_time;
-
                     let end = token.end_time;
 
                     (start >= 0 && end >= start).then_some(Token {
@@ -140,6 +153,14 @@ fn lyric_content(node: &lyrics_parsers::xml_utils::XmlNode) -> Option<&str> {
         .or_else(|| node.children.iter().find_map(lyric_content))
 }
 
+/// 加载一个 `_qm.qrc` document，以及可选的 `_qmts.qrc` 译文和 `_qmRoma.qrc` 罗马音
+/// 伴生文件
+///
+/// 损坏的伴生文件会记录到 [`Document::warnings`]，不会让加载失败
+///
+/// # Errors
+///
+/// 主文件无法读取或 decode，或文件名不是 `_qm.qrc` cache 文件时返回错误
 pub fn load_document(path: &Path) -> anyhow::Result<Document> {
     let filename = path
         .file_name()
@@ -148,11 +169,8 @@ pub fn load_document(path: &Path) -> anyhow::Result<Document> {
         .into_owned();
 
     let plain = decode_text(path)?;
-
     let data = parse_data(&plain)?;
-
     let source_metadata = data.track_metadata.unwrap_or_default();
-
     let metadata = Metadata {
         title: source_metadata.title.unwrap_or_default(),
         artist: source_metadata.artist.unwrap_or_default(),
@@ -160,11 +178,8 @@ pub fn load_document(path: &Path) -> anyhow::Result<Document> {
     };
 
     let original = parse(&plain, "original")?;
-
     let mut tracks = vec![original];
-
     let mut warnings = Vec::new();
-
     let base = filename
         .strip_suffix("_qm.qrc")
         .context("Select an original _qm.qrc file")?;
@@ -241,7 +256,7 @@ mod tests {
 
     #[test]
     fn keeps_literal_newlines_in_local_qrc_attributes() {
-        // 通用 XML DOM 会把属性中的换行归一为空格，导致整首 QRC 无法分行。
+        // 通用 XML DOM 会把属性中的换行归一为空格，导致整首 QRC 无法分行
         let track = parse("<Qrc><Lyric_1 LyricContent=\"[ti:示例]\n[1000,500]A(1000,500)\n[2000,500]B(2000,500)\"/></Qrc>", "original").unwrap();
 
         assert_eq!(track.lines.len(), 2);

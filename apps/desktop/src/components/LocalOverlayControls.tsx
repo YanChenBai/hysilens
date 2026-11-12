@@ -6,6 +6,11 @@ import type { LocalOverlaySettings } from '../lib/local-overlay';
 
 const queryKey = ['local-overlay'];
 
+/**
+ * 原生 overlay 窗口的显示与鼠标穿透开关
+ *
+ * 在桌面 app 之外没有原生 bridge，此时不渲染任何内容
+ */
 export function LocalOverlayControls() {
   const desktopBridge = useDesktopBridge();
 
@@ -26,6 +31,9 @@ export function LocalOverlayControls() {
   return <OverlayControls initial={settings.data} />;
 }
 
+/**
+ * 绑定到缓存 overlay 设置的一组开关；每次切换都会立即保存
+ */
 function OverlayControls({ initial }: { initial: LocalOverlaySettings }) {
   const queries = useQueryClient();
 

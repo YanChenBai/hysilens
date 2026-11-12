@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
-/** `performance.now()` refreshed every animation frame while `active`; for time displays only. */
+/**
+ * `active` 为真时每个动画帧刷新一次的 `performance.now()`，仅用于时间显示
+ */
 export function useNow(active = true): number {
   const [now, setNow] = useState(() => performance.now());
 

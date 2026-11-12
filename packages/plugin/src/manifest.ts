@@ -1,4 +1,6 @@
-/** Node-side manifest helpers shared by the Vite plugin and the CLI. */
+/**
+ * Vite plugin 与 CLI 共用的 Node 侧 manifest 辅助函数
+ */
 import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,10 +10,20 @@ import type { ConfigDefinition } from './config';
 import { API_VERSION, BUILTIN_PREFIX, isBuiltinId, PLUGIN_ID_PATTERN } from './protocol';
 import type { PluginManifest } from './protocol';
 
+/**
+ * 写在构建出的入口旁边的 manifest 文件名
+ */
 export const MANIFEST_FILE = 'hysilens.json';
 
+/**
+ * 由 CLI 与 Vite plugin 求值的构建期声明文件
+ */
 export const CONFIG_FILE = 'hysilens.config.ts';
 
+/**
+ * 为一次构建组装 manifest；可选字段会直接省略而不是留成 `undefined`，
+ * 并且 `revision` 在 `computeRevision` 填充之前保持为空
+ */
 export function createManifest(
   definition: ConfigDefinition<unknown>,
   build: { version: string; entry: string; styles: string[]; revision?: string },
@@ -47,7 +59,9 @@ async function listFiles(directory: string, base = directory): Promise<string[]>
   return files.sort();
 }
 
-/** Content fingerprint of every published file plus the manifest itself. */
+/**
+ * 所有已发布文件加上 manifest 自身的内容指纹
+ */
 export async function computeRevision(
   directory: string,
   manifest: PluginManifest,
@@ -67,7 +81,9 @@ export async function computeRevision(
   return hash.digest('hex');
 }
 
-/** Relative, forward-slash path that stays inside its root. */
+/**
+ * 保持在其根目录内的、使用正斜杠的相对路径
+ */
 export function isSafePath(path: unknown): path is string {
   return (
     typeof path === 'string' &&
@@ -116,7 +132,9 @@ function shapeErrors(manifest: Partial<PluginManifest>): string[] {
   return errors;
 }
 
-/** Apply the host's acceptance rules to an installable plugin directory. */
+/**
+ * 对可安装的 plugin 目录应用 host 的接受规则
+ */
 export async function validatePluginDirectory(
   directory: string,
   expectedId?: string,
@@ -153,7 +171,9 @@ export async function validatePluginDirectory(
   return { manifest, errors };
 }
 
-/** Bundled plugins ship inside the app; only external ones can be linked, packed or installed. */
+/**
+ * 内置 plugin 随应用一起发布；只有外部 plugin 才能被链接、打包或安装
+ */
 export function assertExternal(manifest: PluginManifest, action: string): void {
   if (isBuiltinId(manifest.id)) {
     throw new Error(
@@ -162,7 +182,9 @@ export function assertExternal(manifest: PluginManifest, action: string): void {
   }
 }
 
-/** Mirror of `hysilens_core::config::data_root` and `plugins::root`. */
+/**
+ * 与 `hysilens_core::config::data_root` 和 `plugins::root` 保持一致
+ */
 export function userPluginsDirectory(env: NodeJS.ProcessEnv = process.env): string {
   if (env.HYSILENS_PLUGINS_DIR) {
     return resolve(env.HYSILENS_PLUGINS_DIR);
@@ -175,6 +197,9 @@ export function userPluginsDirectory(env: NodeJS.ProcessEnv = process.env): stri
   return join(data, 'plugins');
 }
 
+/**
+ * `root` 中包的版本；`package.json` 缺失或没有版本时返回 `0.0.0`
+ */
 export async function readPackageVersion(root: string): Promise<string> {
   try {
     const source = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as {

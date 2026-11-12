@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Hysilens Code Style'
+  short_description: 'Apply the hysilens comment and layout style'
+  default_prompt: 'Apply the hysilens code style while editing this repository.'

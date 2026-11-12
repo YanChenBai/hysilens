@@ -1,4 +1,10 @@
-// 内存布局和定位流程参考 WesingCap，MIT 声明见 THIRD_PARTY_NOTICES.md。
+//! 全民K歌 adapter
+//!
+//! 播放位置、状态和内嵌歌词模型都来自对运行中 `WeSing.exe`（仅 x86）的只读扫描
+//! 歌词 host 结构由 module pattern scan 定位，缺失期间每两秒重试一次；没有歌词
+//! cache，因此扫描失败会得到 unavailable session，而不是过期的歌词
+
+// 内存布局和定位流程参考 WesingCap，MIT 声明见 THIRD_PARTY_NOTICES.md
 #[cfg(windows)]
 mod memory;
 
@@ -24,6 +30,7 @@ impl std::error::Error for Loading {}
 
 pub use super::Sample;
 
+/// WeSing 的静态 descriptor，歌词从播放器内存中提取
 pub const DESCRIPTOR: super::Descriptor = super::Descriptor {
     source: crate::model::Source::Wesing,
     session_id: "WeSing.exe",
@@ -31,6 +38,8 @@ pub const DESCRIPTOR: super::Descriptor = super::Descriptor {
     resolve_cache: None,
 };
 
+/// 创建 WeSing adapter 工厂，播放器进程在首次 poll 时才惰性定位，
+/// 而不是在构建 registration 时
 pub fn registration() -> super::Registration {
     super::Registration {
         descriptor: DESCRIPTOR,
@@ -44,33 +53,63 @@ impl super::Adapter for Probe {
     }
 }
 
+/// WeSing adapter 状态：已附加的进程，以及上次 scan 定位到的所有地址
 pub struct Probe {
     origin: Instant,
+
     #[cfg(windows)]
     process: Option<memory::Process>,
+
     #[cfg(windows)]
     timer_candidates: Vec<(u32, f64)>,
+
     #[cfg(windows)]
     timer: Option<u32>,
+
     #[cfg(windows)]
     title: String,
+
     #[cfg(windows)]
     last_sample: Instant,
+
     #[cfg(windows)]
     last_scan: Option<Instant>,
+
     #[cfg(windows)]
     previous_time: Option<f64>,
+
     #[cfg(windows)]
     last_moved: Instant,
+
     #[cfg(windows)]
     host: Option<u32>,
+
     #[cfg(windows)]
     duration_addresses: Vec<u32>,
+
     #[cfg(windows)]
     last_duration_scan: Option<Instant>,
 }
 
+impl std::fmt::Debug for Probe {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = formatter.debug_struct("Probe");
+
+        debug.field("origin", &self.origin);
+
+        #[cfg(windows)]
+        {
+            debug.field("pid", &self.process.as_ref().map(|process| process.pid));
+            debug.field("title", &self.title);
+            debug.field("timer", &self.timer);
+        }
+
+        debug.finish_non_exhaustive()
+    }
+}
+
 impl Probe {
+    /// 创建一个 adapter，其 `server_ms` 原点为 `origin`
     pub fn new(origin: Instant) -> Self {
         Self {
             origin,
@@ -99,6 +138,10 @@ impl Probe {
         }
     }
 
+    /// 对播放器 poll 一次
+    ///
+    /// 歌词 host 仍在定位时报告 `loading` session，扫描失败时报告携带错误文本的
+    /// `unavailable` session，仅 Windows 可用；其他 target 始终报告 `unavailable`
     pub fn sample(&mut self) -> Sample {
         #[cfg(windows)]
         let result = self.read();
@@ -141,6 +184,8 @@ impl Probe {
         }
     }
 
+    /// 返回已附加的 pid、定位到的 clock 地址和候选计数，供按需报告使用
+    /// 非 Windows target 上为空
     pub fn diagnostics(&self) -> serde_json::Value {
         #[cfg(windows)]
         {
@@ -205,7 +250,6 @@ impl Probe {
         }
 
         let process = self.process.as_ref().unwrap();
-
         let now = Instant::now();
 
         if self.host.is_none()
@@ -216,7 +260,6 @@ impl Probe {
             self.last_scan = Some(now);
 
             let host = locate_host(process)?;
-
             let candidates = locate_timers(process)?;
 
             self.host = Some(host);
@@ -263,9 +306,8 @@ impl Probe {
             self.last_duration_scan = Some(now);
         }
 
-        // 大范围搜索结束后再采样播放位置，避免给旧位置附上新的时间锚点。
+        // 大范围搜索结束后再采样播放位置，避免给旧位置附上新的时间锚点
         let now = Instant::now();
-
         let elapsed = now.duration_since(self.last_sample).as_secs_f64();
 
         if self.timer.is_none() && !self.timer_candidates.is_empty() {
@@ -291,7 +333,6 @@ impl Probe {
         self.last_sample = now;
 
         let position = self.timer.map(|address| process.float(address)).transpose();
-
         let position = match position {
             Ok(position) => position,
             Err(error) => {
@@ -315,7 +356,7 @@ impl Probe {
 
         self.previous_time = position;
 
-        // 歌词结束不等于歌曲结束，不用最后一句时间猜测总时长。
+        // 歌词结束不等于歌曲结束，不用最后一句时间猜测总时长
         let status = if position.is_none() {
             "unknown"
         } else if now.duration_since(self.last_moved).as_millis() >= 750 {
@@ -389,7 +430,6 @@ impl Probe {
         );
 
         let id = format!("wesing:{:x}", Sha256::digest(serde_json::to_vec(&tracks)?));
-
         let document = Arc::new(Document {
             id,
             filename: "WeSing memory".into(),
@@ -445,7 +485,6 @@ impl Probe {
 #[cfg(windows)]
 fn locate_host(process: &memory::Process) -> anyhow::Result<u32> {
     let (base, size) = process.module()?;
-
     let inside = |address: u32, count: u32| -> anyhow::Result<u32> {
         ensure!(
             address >= base && (address as u64 + count as u64) <= base as u64 + size as u64,
@@ -475,7 +514,6 @@ fn locate_host(process: &memory::Process) -> anyhow::Result<u32> {
     )?;
 
     let names = process.u32(export + 0x18)?;
-
     let functions = process.u32(export + 0x14)?;
 
     ensure!(names <= 4096 && functions <= 4096, "Invalid export count");
@@ -525,9 +563,7 @@ fn locate_host(process: &memory::Process) -> anyhow::Result<u32> {
     }
 
     let create = create.context("CreateLyricHost export not found")?;
-
     let code = process.read(create, 128)?;
-
     let constructor = code
         .windows(5)
         .enumerate()
@@ -537,7 +573,6 @@ fn locate_host(process: &memory::Process) -> anyhow::Result<u32> {
             }
 
             let relative = i32::from_le_bytes(bytes[1..5].try_into().unwrap());
-
             let target = create as i64 + offset as i64 + 5 + relative as i64;
 
             u32::try_from(target)
@@ -547,7 +582,6 @@ fn locate_host(process: &memory::Process) -> anyhow::Result<u32> {
         .context("Unsupported LyricHost constructor")?;
 
     let code = process.read(constructor, 200)?;
-
     let vtable = code
         .windows(6)
         .find_map(|bytes| {
@@ -562,13 +596,9 @@ fn locate_host(process: &memory::Process) -> anyhow::Result<u32> {
         .context("Unsupported LyricHost vtable assignment")?;
 
     let pattern: Vec<_> = vtable.to_le_bytes().into_iter().map(Some).collect();
-
     let hits = process.scan(&pattern)?;
-
     let mut valid = Vec::new();
-
     let mut issues = Vec::new();
-
     let mut loading = false;
 
     for address in hits {
@@ -628,9 +658,7 @@ fn vector(
     maximum: u32,
 ) -> anyhow::Result<(u32, u32)> {
     let begin = process.u32(begin_at)?;
-
     let end = process.u32(end_at)?;
-
     let count = vector_count(begin, end, maximum).with_context(|| {
         format!("Vector fields {begin_at:#x}/{end_at:#x}, begin={begin:#x}, end={end:#x}")
     })?;
@@ -665,11 +693,9 @@ fn read_timeline(
     end_at: u32,
     capacity_at: u32,
 ) -> anyhow::Result<Vec<Line>> {
-    // std::vector 依次存放 begin、end、capacity，不遍历尚未初始化的容量。
+    // std::vector 依次存放 begin、end、capacity，不遍历尚未初始化的容量
     let (begin, count) = vector(process, begin_at, end_at, 1000)?;
-
     let end = begin + count * 4;
-
     let capacity = process.u32(capacity_at)?;
 
     vector_count(begin, capacity, 1000)?;
@@ -681,7 +707,6 @@ fn read_timeline(
     }
 
     let pointers = process.read(begin, count as usize * 4)?;
-
     let mut lines: Vec<Line> = Vec::new();
 
     for bytes in pointers.as_chunks::<4>().0 {
@@ -694,16 +719,12 @@ fn read_timeline(
         };
 
         let (chars, count) = vector(process, entry + 8, entry + 12, 500)?;
-
         let mut text = String::new();
-
         let mut tokens = Vec::new();
 
         for index in 0..count {
             let character = process.u32(chars + index * 4)?;
-
             let render = process.u32(character)?;
-
             let word = process.string(render)?;
 
             text.push_str(&word);
@@ -724,7 +745,7 @@ fn read_timeline(
             }
         }
 
-        // 部分单元没有可信时间时整行退回逐行，避免丢字或伪造平均分配时间。
+        // 部分单元没有可信时间时整行退回逐行，避免丢字或伪造平均分配时间
         if tokens.len() != count as usize {
             tokens.clear();
         }
@@ -808,7 +829,7 @@ fn lyric_timestamp(seconds: f32) -> anyhow::Result<Option<i32>> {
         "Invalid lyric timestamp"
     );
 
-    // 负时间的前置信息不参与同步，零时间和重叠行都是合法内容。
+    // 负时间的前置信息不参与同步，零时间和重叠行都是合法内容
     Ok((seconds >= 0.0).then_some((seconds as f64 * 1000.0).round() as i32))
 }
 
@@ -857,7 +878,6 @@ fn read_progress_text(process: &memory::Process, delimiter: u32) -> anyhow::Resu
 
 fn parse_progress(text: &str) -> Option<(u32, u32)> {
     let (left, right) = text.split_once(" | ")?;
-
     let left: String = left
         .chars()
         .rev()
@@ -873,7 +893,6 @@ fn parse_progress(text: &str) -> Option<(u32, u32)> {
         .collect();
 
     let current = parse_time(&left)?;
-
     let duration = parse_time(&right)?;
 
     (duration > 0 && current <= duration).then_some((current, duration))
@@ -935,7 +954,6 @@ fn matches(bytes: &[u8], pattern: &[Option<u8>]) -> Vec<usize> {
     memchr::memchr_iter(byte, bytes)
         .filter_map(|hit| {
             let index = hit.checked_sub(anchor)?;
-
             let window = bytes.get(index..index + pattern.len())?;
 
             window
@@ -1084,7 +1102,6 @@ mod tests {
         }
 
         let host = 0x10000;
-
         let mut fixture = Fixture(BTreeMap::new());
 
         fixture.pointer(host + 0x54, 0x20000);
@@ -1097,7 +1114,7 @@ mod tests {
 
         fixture.pointer(0x20004, 0x31000);
 
-        // 切歌后 capacity 中残留的第三项不可读，不能将其视作有效歌词。
+        // 切歌后 capacity 中残留的第三项不可读，不能将其视作有效歌词
         fixture.pointer(0x20008, 0xbde600b5);
 
         fixture.put(0x30000, &0.0f32.to_le_bytes());

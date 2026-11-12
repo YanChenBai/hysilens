@@ -16,6 +16,7 @@ describe('lyric samples', () => {
     '%s keeps a consistent timeline',
     (_id, sample) => {
       const lines = original(sample.id);
+
       expect(lines.length).toBeGreaterThan(3);
 
       for (const [index, line] of lines.entries()) {
@@ -62,6 +63,7 @@ describe('lyric samples', () => {
 
   it('time English lyrics by word with rests between phrases', () => {
     const lines = original('en');
+
     expect(lines.every(line => line.tokens.length > 1 || line.text.length < 6)).toBe(true);
     expect(
       lines.some(line =>

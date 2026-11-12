@@ -12,7 +12,7 @@ const DialogOriginContext = createContext<{ x: number; y: number } | null>(null)
 export type DialogProps<Payload> = BaseDialog.Root.Props<Payload>;
 
 /**
- * 模态框状态容器；鼠标打开时从点击位置展开，键盘打开时从触发器展开。
+ * 模态框状态容器；鼠标打开时从点击位置展开，键盘打开时从触发器展开
  * @example
  * ```tsx
  * <Dialog>

@@ -6,9 +6,24 @@ import { ColorField } from './ColorField';
 import { FontPicker } from './FontPicker';
 
 interface Props {
+  /**
+   * schema 属性名，同时也是控件 id 的后缀
+   */
   name: string;
+
+  /**
+   * 描述控件及其取值范围的 JSON Schema 片段
+   */
   field: AnySchemaObject;
+
+  /**
+   * 当前值；已存储的 config 早于 schema 时可能缺失
+   */
   value: unknown;
+
+  /**
+   * 接收解析后的控件值；数字输入框为空时传入 `''`
+   */
   onChange: (value: unknown) => void;
 }
 
@@ -104,6 +119,9 @@ function StringControl({ name, field, value, onChange }: Props) {
   return <Input id={id} value={String(value)} onChange={event => onChange(event.target.value)} />;
 }
 
+/**
+ * 渲染一个 plugin config 属性，控件按 JSON Schema 类型与 `x-hysilens-*` 注解选择
+ */
 export function ThemeField(props: Props) {
   return (
     <Field

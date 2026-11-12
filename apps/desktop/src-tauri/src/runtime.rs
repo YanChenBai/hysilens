@@ -1,9 +1,23 @@
+//! 让内嵌的 HTTP server 在桌面 host 的整个生命周期内保持运行
+//!
+//! [`supervise`] 由 `main` spawn 一次，是唯一启动、重启或放弃 server task 的地方：
+//!
+//! - 重启请求从 `mpsc` channel 到达，携带完整的新设置
+//! - 新设置先持久化再 drop 旧 listener，因此写入失败不会影响运行中的 server
+//! - 重新绑定成功后，新的 control URL 通过 `watch` channel 发布，`main` 用它
+//!   重新指向两个 WebView 窗口
+
 use hysilens_core::{
     config::Settings,
     server::{self, RuntimeOptions},
 };
 use tokio::sync::{mpsc, watch};
 
+/// 在 `listener` 上启动一个 server 实例
+///
+/// `restart` 交给 server，使通过 HTTP API 做出的设置变更能到达 [`supervise`]
+/// 关闭不是 graceful 的：调用方通过 abort 返回的 task 来停止实例，这也是
+/// shutdown future 始终 pending 的原因
 fn start(
     listener: tokio::net::TcpListener,
     settings: Settings,
@@ -16,6 +30,13 @@ fn start(
     ))
 }
 
+/// 运行 server 并应用重启请求，直到进程关闭
+///
+/// `requests` 是作为 `restart` 交给 server 的 channel 的接收端，`urls` 在每次
+/// 重启成功后发布新绑定 server 的 `/control` URL
+///
+/// 所有 restart sender 都被 drop、重启时新端口与旧端口都绑定失败，或 server
+/// task 自身停止时循环结束；调用方 abort 整个 task 来停止当前 server
 pub async fn supervise(
     listener: tokio::net::TcpListener,
     mut settings: Settings,
@@ -24,17 +45,32 @@ pub async fn supervise(
     urls: watch::Sender<String>,
 ) {
     let mut task = start(listener, settings.clone(), restart.clone());
+
     loop {
         let next = tokio::select! {
-            next = requests.recv() => { let Some(next) = next else { task.abort(); break; }; next },
-            result = &mut task => { eprintln!("本机服务已停止: {result:?}"); break; },
+            next = requests.recv() => {
+                let Some(next) = next else {
+                    task.abort();
+                    break;
+                };
+                next
+            }
+            result = &mut task => {
+                eprintln!("本机服务已停止: {result:?}");
+                break;
+            }
         };
+
+        // 让触发重启的请求先写完响应，之后再 drop listener
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
         if let Err(error) = next.save() {
             eprintln!("保存设置失败: {error}");
             continue;
         }
+
         task.abort();
+
         let _ = task.await;
         let listener =
             match tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, next.port)).await {
@@ -45,7 +81,9 @@ pub async fn supervise(
                 }
                 Err(error) => {
                     eprintln!("服务重启失败: {error}");
+
                     let _ = settings.save();
+
                     match tokio::net::TcpListener::bind((
                         std::net::Ipv4Addr::LOCALHOST,
                         settings.port,
@@ -60,6 +98,7 @@ pub async fn supervise(
                     }
                 }
             };
+
         task = start(listener, settings.clone(), restart.clone());
     }
 }

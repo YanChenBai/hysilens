@@ -5,7 +5,7 @@ import { Check, ChevronDown } from 'lucide-react';
 import type { WithClassName } from '../types';
 
 /**
- * 静态选项选择器；搜索和远程分页请使用 SearchableSelect。
+ * 静态选项选择器；搜索和远程分页请使用 `SearchableSelect`
  * @example
  * ```tsx
  * <Select defaultValue="all">
@@ -53,7 +53,7 @@ export const SelectGroup = BaseSelect.Group;
 export type SelectTriggerProps = WithClassName<BaseSelect.Trigger.Props>;
 
 /**
- * 选择器触发按钮；无可见标签时提供 aria-label
+ * 选择器触发按钮；无可见标签时提供 `aria-label`
  * @example
  * ```tsx
  * <SelectTrigger aria-label="状态">
@@ -131,7 +131,7 @@ export function SelectContent({
 export type SelectItemProps = WithClassName<BaseSelect.Item.Props>;
 
 /**
- * 可选项，value 应保持唯一
+ * 可选项，`value` 应保持唯一
  * @example
  * ```tsx
  * <SelectItem value="all">全部</SelectItem>

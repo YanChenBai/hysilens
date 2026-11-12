@@ -1,3 +1,8 @@
+//! QQ 音乐 adapter
+//!
+//! 播放状态来自 SMTC，歌词来自 [`catalog`] 中 resolver 匹配到的 `_qm.qrc` cache，
+//! 不进行任何内存访问
+
 pub(crate) mod cache;
 pub mod catalog;
 pub mod index;
@@ -8,6 +13,7 @@ use super::{Adapter, Descriptor, LyricsMode, Registration, Sample};
 use crate::model::{Playback, Source};
 use std::{path::PathBuf, time::Instant};
 
+/// QQ Music 的静态 descriptor，歌词与本地 QRC cache 匹配
 pub const DESCRIPTOR: Descriptor = Descriptor {
     source: Source::QqMusic,
     session_id: "QQMusic.exe",
@@ -15,6 +21,7 @@ pub const DESCRIPTOR: Descriptor = Descriptor {
     resolve_cache: Some(catalog::resolve),
 };
 
+/// 创建 QQ Music adapter 工厂，并为 `cache` 启动后台 QRC cache scanner
 pub fn registration(cache: PathBuf) -> Registration {
     Registration {
         descriptor: DESCRIPTOR,
@@ -35,6 +42,7 @@ pub use playback::Probe;
 
 struct QqMusic {
     origin: Instant,
+
     probe: anyhow::Result<playback::Probe>,
 }
 

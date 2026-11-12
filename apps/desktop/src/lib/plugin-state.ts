@@ -6,13 +6,31 @@ import { playbackPosition } from './clock';
 import { ignoredLyricState } from './ignored-lyrics';
 import type { SessionState } from './session';
 
+/**
+ * plugin 每 frame 从 host 收到的输入
+ */
 export interface PluginFrameState {
+  /**
+   * 已移除忽略区间的歌词，未加载时为 `null`
+   */
   lyrics: LyricDocument | null;
+
+  /**
+   * playback 标志，包括 overlay 当前是否应该显示内容
+   */
   playback: Playback;
+
+  /**
+   * 歌词 clock anchor；`position` 是已应用 overlay 偏移的歌词时间，单位毫秒
+   */
   clock: ClockAnchor;
 }
 
-/** Stop showing lyrics once the stream goes quiet or the player has nothing to play. */
+/**
+ * stream 静默或播放器没有可播放内容时停止显示歌词
+ *
+ * 状态 snapshot 超过 3000 ms、socket 断开、播放器处于 stopped/closed 状态都视为不可见
+ */
 function visible(session: SessionState, now: number): boolean {
   const status = session.snapshot?.session?.status ?? 'closed';
 
@@ -24,8 +42,12 @@ function visible(session: SessionState, now: number): boolean {
 }
 
 /**
- * Everything a plugin learns from the host besides its config. `clock.position` is lyric
- * time with the overlay offset applied once, so plugins never handle offsets themselves.
+ * plugin 从 host 获得的除 config 之外的全部信息，`clock.position` 是已应用一次
+ * overlay 偏移的歌词时间，因此 plugin 自己无需处理 offset
+ *
+ * @param session 当前 host session 状态，包含连接存活情况
+ * @param options `playground` 会让演示循环持续运行；`startedAt` 与 `now` 是
+ * 单位为毫秒的 performance 时间
  */
 export function pluginFrameState(
   session: SessionState,
@@ -54,7 +76,8 @@ export function pluginFrameState(
     playback: { playing, visible: visible(session, options.now) },
     clock: {
       position: lyricTime,
-      // Without a rate the host does not extrapolate either, so neither may the plugin.
+
+      /* 没有 rate 时 host 也不外推时间，因此 plugin 同样不能外推 */
       rate: playing && current?.rate != null ? current.rate : 0,
     },
   };

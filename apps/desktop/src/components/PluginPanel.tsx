@@ -12,6 +12,11 @@ import { InstallPluginButton } from './InstallPluginButton';
 import { OpenPluginDirectoryButton } from './OpenPluginDirectoryButton';
 import { ThemeEditor } from './ThemeEditor';
 
+/**
+ * plugin 标签页：renderer 选择、安装/重新扫描操作以及当前 plugin 的主题编辑器
+ *
+ * @param active overlay config 中当前选中的 renderer id
+ */
 export function PluginPanel({ active }: { active: string }) {
   const [switchError, setSwitchError] = useState('');
   const [notice, setNotice] = useState('');

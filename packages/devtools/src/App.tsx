@@ -35,7 +35,7 @@ function Workspace({ info, onReconnect }: { info: PluginInfo; onReconnect: () =>
   const [sampleId, setSampleId] = useState(defaultSample.id);
   const [edits, setConfig] = useState<ConfigValues>(() => restoreConfig(info));
 
-  // Follows schema changes after a hysilens.config.ts edit without an extra effect pass.
+  /* 跟随 hysilens.config.ts 修改后的 schema 变化，不需要额外的 effect 轮次 */
   const config = useMemo(() => reconcile(info, edits), [info, edits]);
 
   const [transport, setTransport] = useState(() =>
@@ -58,7 +58,7 @@ function Workspace({ info, onReconnect }: { info: PluginInfo; onReconnect: () =>
 
   useEffect(() => persistConfig(info, config), [info, config]);
 
-  // Each plugin reload may follow a hysilens.config.ts edit; pick up its new schema.
+  /* 每次 plugin 重载都可能伴随 hysilens.config.ts 修改，需要获取新的 schema */
   useEffect(() => {
     if (status.phase === 'connecting') {
       onReconnect();
@@ -176,7 +176,7 @@ export default function App() {
   const refresh = useCallback(() => {
     fetchPluginInfo().then(
       next => {
-        // Keep the same object when nothing changed so dependent state is left alone.
+        /* 内容没变时保持同一个对象，避免触发依赖它的状态 */
         setInfo(current => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
         setError('');
       },

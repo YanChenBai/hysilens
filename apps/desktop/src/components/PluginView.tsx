@@ -12,9 +12,14 @@ import { pluginScale } from '../lib/plugin-scale';
 import { pluginFrameState } from '../lib/plugin-state';
 import { readSession, useSession } from '../lib/session';
 
-/** Matches the host's clock sync cadence; anchors are only sent when the plugin would drift. */
+/**
+ * 与 host 的 clock 同步节奏一致；仅当 plugin 会产生漂移时才发送 anchor
+ */
 const SYNC_INTERVAL_MS = 250;
 
+/**
+ * 与 preview query 值对应的 CSS `color-scheme`，让 iframe 绘制的背景与控制 UI 一致
+ */
 function previewColorScheme(preview: string | null) {
   const schemes: Record<string, string> = {
     system: 'light dark',
@@ -26,6 +31,10 @@ function previewColorScheme(preview: string | null) {
   return schemes[preview ?? 'light'] ?? 'light';
 }
 
+/**
+ * 跟踪 preview iframe 是否应使用演示数据，由父级控制面板通过 `postMessage` 驱动
+ * 非 preview 模式下以初始 `playground` 值为准
+ */
 function usePreviewMode(preview: string | null, playground: boolean) {
   const [previewMode, setPreviewMode] = useState(playground);
 
@@ -55,9 +64,14 @@ function usePreviewMode(preview: string | null, playground: boolean) {
 }
 
 /**
- * Own one PluginHost per plugin revision and keep it fed with config, lyrics and time.
- * The iframe receives its `src` in the same commit that `ready` turns true, and a layout
- * effect runs before that navigation can dispatch `load` or the plugin's `waiting` message.
+ * 每个 plugin revision 拥有一个 PluginHost，并持续向它提供 config、歌词与时间
+ * iframe 在 `ready` 变为 true 的同一次 commit 中拿到 `src`，而 layout effect
+ * 会在该跳转派发 `load` 或 plugin 的 `waiting` 消息之前执行
+ *
+ * @param frame host 要挂载到的 iframe 元素
+ * @param plugin 当前活跃的 manifest；revision 变化会构建新的 host 与 document
+ * @param config 归一化后的 config 值，未加载完成时为 `undefined`
+ * @param previewMode 是否用演示歌词代替实时 session
  */
 function usePluginHost(
   frame: React.RefObject<HTMLIFrameElement | null>,
@@ -71,8 +85,10 @@ function usePluginHost(
   const ready = Boolean(plugin && config);
   const revision = plugin ? `${plugin.id}:${plugin.revision}` : '';
 
-  // A layout effect declared before the host effect: both run in order within the same commit,
-  // so the host is created from the config that just made `ready` true, not a stale ref.
+  /*
+   * 声明在 host effect 之前的 layout effect：两者在同一次 commit 中按序执行
+   * 因此 host 用的是刚让 `ready` 变为 true 的 config，而不是过期的 ref
+   */
   useLayoutEffect(() => {
     latest.current = { config, previewMode };
 
@@ -119,12 +135,20 @@ function usePluginHost(
       host.current = null;
       void current.dispose();
     };
-    // A new revision means a new iframe element and document, and therefore a new host.
+    /* 新的 revision 意味着新的 iframe 元素与 document，因此也需要新的 host */
   }, [frame, ready, revision]);
 
   return { status, ready };
 }
 
+/**
+ * 在沙箱 iframe 中渲染当前歌词 plugin 并保持同步
+ *
+ * 在 preview 模式下，`preview` query 参数决定配色方案，并在嵌入控制面板时
+ * 把 frame 切换为演示数据
+ *
+ * @param playground frame 默认是否从演示数据开始；供 `/playground` 使用
+ */
 export function PluginView({ playground = false }: { playground?: boolean }) {
   const preview = new URLSearchParams(location.search).get('preview');
   const previewMode = usePreviewMode(preview, playground);

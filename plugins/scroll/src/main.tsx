@@ -11,29 +11,57 @@ type Config = ConfigOf<typeof config>;
 
 interface Snapshot {
   config: Config;
+
   lyrics: LyricDocument | null;
+
+  /**
+   * host 希望显示歌词时为 true；暂停或空闲时为 false
+   */
   visible: boolean;
-  /** Lyric time with offset applied. */
+
+  /**
+   * 已应用 offset 的歌词时间
+   */
   time: number | null;
 }
 
+/**
+ * `useSyncExternalStore` 读取的 snapshot store；host 通过 `subscribe` 推送更新
+ */
 interface Store {
   subscribe: (listener: () => void) => () => void;
+
   get: () => Snapshot;
 }
 
+/**
+ * 准备渲染的一行歌词，包含它在视口中占用的高度
+ */
 interface RenderLine {
   line: LyricLine;
+
   index: number;
+
   romanization?: string;
+
   translation?: string;
+
+  /**
+   * 行高，单位 CSS 像素：原文行加上附加轨道
+   */
   height: number;
 }
 
+/**
+ * 当前行的进度，按 CSS 百分比返回，限制在 `0%`–`100%`
+ */
 function progress(start: number, end: number, position: number): string {
   return `${Math.min(100, Math.max(0, ((position - start) / Math.max(1, end - start)) * 100))}%`;
 }
 
+/**
+ * 覆盖 `time` 的附加轨道文本，没有时返回 `undefined`
+ */
 function secondary(lyrics: LyricDocument | null, kind: string, time: number) {
   return lyrics?.tracks
     .find(track => track.kind === kind)
@@ -56,7 +84,9 @@ function Lyrics({
   time,
 }: {
   config: Config;
+
   lyrics: LyricDocument | null;
+
   time: number;
 }) {
   const lines = lyrics?.tracks.find(track => track.kind === 'original')?.lines ?? [];
@@ -80,6 +110,7 @@ function Lyrics({
       index,
       romanization,
       translation,
+
       height: theme.fontSize * 1.3 + theme.lineGap + secondaryCount * 26,
     };
   });
@@ -95,9 +126,13 @@ function Lyrics({
       style={
         {
           color: theme.color,
+
           fontFamily: `${JSON.stringify(theme.fontFamily === 'ZCOOLQingKeHuangYou' ? 'Noto Sans SC' : theme.fontFamily)}, 'Noto Sans SC', sans-serif`,
+
           '--color': theme.color,
+
           '--active': theme.activeColor,
+
           '--font-size': `${theme.fontSize}px`,
         } as React.CSSProperties
       }
@@ -126,8 +161,11 @@ function LyricRow({
   time,
 }: {
   wordHighlight: boolean;
+
   row: RenderLine;
+
   active: boolean;
+
   time: number;
 }) {
   const { line, romanization, translation } = row;
@@ -183,7 +221,7 @@ export default definePlugin<typeof config>({
       get: () => snapshot,
     };
 
-    // Time advances continuously, so refresh once per frame like a regular animation loop.
+    /* 时间连续推进，所以按帧刷新，和普通动画循环一致 */
     const tick = () => {
       snapshot = read();
       listeners.forEach(listener => listener());

@@ -1,6 +1,7 @@
 import { expect, it } from 'vite-plus/test';
 
 import { canSlide, focusLine } from './lyric-window';
+
 it('keeps context through gaps and preserves empty timed rows', () => {
   const lines = [
     { startMs: 1000, endMs: 2000, text: 'A', tokens: [] },

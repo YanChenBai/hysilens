@@ -44,9 +44,10 @@ describe('hysilens build', () => {
     ]);
 
     const entry = await readFile(join(dist, 'index.js'), 'utf8');
+
     expect(entry).toContain('hysilens:connect');
     expect(entry).not.toMatch(/toJSONSchema|ZodObject/);
-    // Libraries must see a production NODE_ENV even though the entry is not an HTML app.
+    /* 即使入口不是 HTML 应用，依赖库也必须看到生产环境的 NODE_ENV */
     expect(entry).not.toContain('process.env');
     expect(entry).toContain('production');
     expect((await validatePluginDirectory(dist, 'basic')).errors).toEqual([]);
@@ -70,6 +71,7 @@ describe('hysilens pack', () => {
       expect(output).toBe(join(directory, 'basic-1.2.3.zip'));
 
       const files = unzipSync(await readFile(output));
+
       expect(Object.keys(files).sort()).toEqual(
         ['hysilens.json', 'index.js', ...manifest.styles].sort(),
       );
@@ -92,7 +94,9 @@ describe('manifest rules', () => {
   it('reports mismatched ids and missing files', async () => {
     const dist = join(fixtures, 'basic/dist');
     await buildPlugin(join(fixtures, 'basic'), { logLevel: 'silent' });
+
     const { errors } = await validatePluginDirectory(dist, 'other');
+
     expect(errors).toEqual(['id basic 与目录名 other 不一致']);
     expect((await validatePluginDirectory(fixtures)).errors[0]).toContain('无法读取');
   }, 60_000);

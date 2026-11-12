@@ -11,6 +11,9 @@ import { FooterActions } from './FooterActions';
 import { KugouDiagnostics } from './KugouDiagnostics';
 import { LocalOverlayControls } from './LocalOverlayControls';
 
+/**
+ * 加载一次系统设置并交给可编辑表单
+ */
 export function SettingsPanel() {
   const settings = useQuery({
     queryKey: ['settings'],
@@ -28,6 +31,10 @@ export function SettingsPanel() {
   );
 }
 
+/**
+ * 设置的可编辑副本；保存时把三个用户可编辑字段合并进最新的服务端状态
+ * 这样别处并发做出的修改不会被覆盖
+ */
 function SettingsForm({ initial }: { initial: AppSettings }) {
   const [draft, setDraft] = useState(initial);
   const [saved, setSaved] = useState(initial);
