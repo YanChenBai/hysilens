@@ -105,7 +105,10 @@ export function PluginPanel({ active }: { active: string }) {
         </div>
         <FieldError show={Boolean(error)}>{error}</FieldError>
         {notice && !error ? (
-          <p role="status" className="text-xs text-emerald-600 dark:text-emerald-400">
+          <p
+            role="status"
+            className="mb-2 rounded-lg bg-emerald-500/8 px-3 py-2.5 text-xs leading-relaxed break-words text-emerald-600 dark:text-emerald-400"
+          >
             {notice}
           </p>
         ) : null}
