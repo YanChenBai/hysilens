@@ -254,7 +254,7 @@ impl ControlHandle {
             }
 
             /* OS 进程和调试端口由后端采样，状态变化才推送，不需要前端定时调用 IPC */
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
     }
 

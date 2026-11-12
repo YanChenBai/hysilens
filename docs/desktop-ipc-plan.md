@@ -32,7 +32,7 @@ HTTP 只保留 `/api/events`、`/api/plugins`、`/api/plugins/{id}/config`、`/a
 - 页面卸载或订阅替换时释放旧 channel；服务重启时更新 snapshot epoch 并刷新缓存
 - IPC 失败不静默切回 HTTP，避免重复执行删除、安装、启动或诊断操作
 - 主界面不定时调用 control command；播放状态附带发送时间戳，时钟对齐随状态推送完成
-- 酷狗增强状态由核心服务探测进程和调试端口，每两秒采样、变化才通过 channel 推送；主界面只消费缓存
+- 酷狗增强状态由核心服务探测进程和调试端口，每轮完成后等待 500ms 再采样、变化才通过 channel 推送；主界面只消费缓存
 - plugin iframe、OBS 页面及歌词窗口不能取得主窗口的控制权限
 - 诊断导出保留并发保护，plugin 删除保留内置保护和链接处理
 
