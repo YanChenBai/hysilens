@@ -1,10 +1,11 @@
 import { Button, useTheme } from '@hysilens/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Monitor, Play, Radio } from 'kubai-icons-react';
+import { Music, Play, Radio } from 'kubai-icons-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { getJson } from '../lib/api';
 import type { PluginCatalog } from '../lib/api';
+import { useSession } from '../lib/session';
 import { CopySourceButton } from './CopySourceButton';
 
 /**
@@ -15,12 +16,38 @@ function postMode(frame: HTMLIFrameElement | null, playground: boolean) {
 }
 
 /**
+ * 仅在控制面板的实时预览中提示空播放状态，不写入 OBS 画面
+ */
+function EmptyPlaybackHint({ demo }: { demo: boolean }) {
+  const { snapshot, connection } = useSession();
+  const current = snapshot?.session;
+
+  const hasContent =
+    connection === 'connected' &&
+    current?.title.trim() &&
+    !['opened', 'stopped', 'closed'].includes(current.status);
+
+  if (demo || hasContent) {
+    return null;
+  }
+
+  return (
+    <div className="pointer-events-none absolute inset-0 grid place-items-center px-6">
+      <div role="status" className="flex flex-col items-center gap-3 text-center">
+        <Music size={48} color="#a78bfa" aria-hidden="true" />
+        <p className="text-foreground/70 text-sm font-medium">暂无播放内容</p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * 当前 plugin 的实时 iframe preview，带演示/实时切换与 OBS 源地址
  *
  * @param active renderer id，其声明的 viewport 在有效时显示为推荐尺寸
  */
 export function PreviewPanel({ active }: { active: string }) {
-  const [demo, setDemo] = useState(true);
+  const [demo, setDemo] = useState(false);
   const { theme } = useTheme();
   const frame = useRef<HTMLIFrameElement>(null);
 
@@ -60,16 +87,13 @@ export function PreviewPanel({ active }: { active: string }) {
       <iframe
         ref={frame}
         title="歌词画面预览"
-        src={`/playground?preview=${theme}`}
+        src={`/?preview=${theme}`}
         onLoad={() => postMode(frame.current, demo)}
         style={{ colorScheme: theme === 'system' ? 'light dark' : theme }}
         className="absolute inset-0 h-full w-full border-0 bg-transparent"
       />
-      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-4 bg-gradient-to-b from-[#fafafa]/90 to-transparent px-5 pt-4 pb-10 dark:from-black/80">
-        <h2 className="flex items-center gap-2 text-sm font-medium">
-          <Monitor size={20} color="#60a5fa" />
-          歌词预览
-        </h2>
+      <EmptyPlaybackHint demo={demo} />
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-end gap-4 bg-gradient-to-b from-[#fafafa]/90 to-transparent px-5 pt-4 pb-10 dark:from-black/80">
         <div className="flex gap-1">
           <Button
             variant={demo ? 'secondary' : 'ghost'}
