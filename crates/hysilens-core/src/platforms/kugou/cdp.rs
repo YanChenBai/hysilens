@@ -122,6 +122,8 @@ impl PlayInfo {
                 .cloned()
                 .collect(),
             preferred_lyric_id: None,
+            // 歌名、歌手与 hash 来自同一次 864 读取，不会与当前歌曲错位
+            metadata_fallback: true,
         }
     }
 }

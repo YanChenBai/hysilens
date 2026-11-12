@@ -80,6 +80,12 @@ pub(crate) struct LyricMatch {
 
     /// 平台本身推荐的歌词 id（若有）
     pub preferred_lyric_id: Option<String>,
+
+    /// hash 没有匹配到任何缓存时，是否允许退回按歌名与歌手匹配
+    ///
+    /// 只在歌名、歌手与 hash 来自同一次读取时开启：酷狗会把同一首歌其他音质或版本的歌词
+    /// 以另一个 hash 命名缓存，单靠 hash 会漏掉它们
+    pub metadata_fallback: bool,
 }
 
 /// 一轮采样：adapter 看到的所有 session 加上共享的 server clock

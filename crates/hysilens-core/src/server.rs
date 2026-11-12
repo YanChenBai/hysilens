@@ -868,6 +868,7 @@ mod diagnostic_tests {
             lyric_match: Some(LyricMatch {
                 file_hashes: vec!["audio-hash".into()],
                 preferred_lyric_id: Some("42".into()),
+                metadata_fallback: false,
             }),
             ..Session::default()
         });

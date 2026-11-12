@@ -48,7 +48,10 @@ type Tone = 'ok' | 'warn' | 'idle' | null;
 
 function describe(status: EnhancedStatus | undefined): { text: string; tone: Tone } {
   if (!status?.enabled) {
-    return { text: '通过酷狗内嵌网页读取进度和歌曲，酷狗升级后通常仍可用', tone: null };
+    return {
+      text: '通过酷狗内嵌网页读取进度和歌曲，并联网查询歌词',
+      tone: null,
+    };
   }
 
   if (status.connected) {
@@ -207,31 +210,42 @@ export function KugouEnhancedSetting() {
       </SettingsRow>
       {!open && error ? <FieldError show>{error.message}</FieldError> : null}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogTitle>启用酷狗增强模式</DialogTitle>
-          <DialogDescription>
-            通过酷狗内嵌网页的接口读取播放进度和歌曲
-            hash，不依赖酷狗的内部版本，读取失败时自动回退到当前方式。
-          </DialogDescription>
-          <div className="text-muted-foreground mt-4 space-y-3 text-sm leading-relaxed">
-            <div>
-              <p className="text-foreground font-medium">使用前需要</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                <li>从托盘完全退出酷狗，只关闭窗口无效</li>
-                <li>通过下方按钮或增强快捷方式启动酷狗</li>
-                <li>关闭酷狗的开机自启，否则开机启动的酷狗不会开启增强模式</li>
-              </ul>
+        <DialogContent className="flex flex-col overflow-hidden p-0">
+          <DialogTitle className="shrink-0 px-6 pt-6">启用酷狗增强模式</DialogTitle>
+          {/* 只有说明区域滚动，操作按钮常驻底部 */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+            <DialogDescription>
+              通过酷狗内嵌网页的接口读取播放进度和歌曲
+              hash，读取失败时自动回退到当前方式。该接口并非酷狗公开承诺的功能，酷狗升级后可能失效。
+            </DialogDescription>
+            <div className="text-muted-foreground mt-4 space-y-3 text-sm leading-relaxed">
+              <div>
+                <p className="text-foreground font-medium">使用前需要</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                  <li>从托盘完全退出酷狗，只关闭窗口无效</li>
+                  <li>通过下方按钮或增强快捷方式启动酷狗</li>
+                  <li>关闭酷狗的开机自启，否则开机启动的酷狗不会开启增强模式</li>
+                </ul>
+              </div>
+              <div>
+                <p className="text-foreground font-medium">联网查询歌词</p>
+                <p className="mt-1">
+                  每首歌会向酷狗歌词服务（krcs.kugou.com、lyrics.kugou.com）发送当前歌曲的
+                  hash、曲库 ID
+                  和时长，取得酷狗推荐的歌词：用于准确定位本地缓存，本地缓存匹配不到时直接使用下载的歌词。不发送账号或设备信息，下载的歌词不会写入磁盘。
+                </p>
+              </div>
+              <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
+                酷狗会在 127.0.0.1:{status.data?.port ?? 9225}{' '}
+                开放调试端口，仅本机可访问，但本机其他程序也能借此操作已登录的酷狗页面。关闭增强模式后，需正常重启酷狗端口才会关闭。
+              </p>
+              {notice ? <p className="text-foreground wrap-anywhere">{notice}</p> : null}
+              <FieldError show={Boolean(toggle.error ?? shortcut.error)}>
+                {(toggle.error ?? shortcut.error)?.message}
+              </FieldError>
             </div>
-            <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
-              酷狗会在 127.0.0.1:{status.data?.port ?? 9225}{' '}
-              开放调试端口，仅本机可访问，但本机其他程序也能借此操作已登录的酷狗页面。关闭增强模式后，需正常重启酷狗端口才会关闭。
-            </p>
-            {notice ? <p className="text-foreground wrap-anywhere">{notice}</p> : null}
-            <FieldError show={Boolean(toggle.error ?? shortcut.error)}>
-              {(toggle.error ?? shortcut.error)?.message}
-            </FieldError>
           </div>
-          <DialogFooter className="flex-wrap">
+          <DialogFooter className="mt-0 shrink-0 flex-wrap border-t px-6 py-4">
             <DialogClose render={<Button variant="ghost" size="sm" />}>取消</DialogClose>
             <Button
               variant="secondary"

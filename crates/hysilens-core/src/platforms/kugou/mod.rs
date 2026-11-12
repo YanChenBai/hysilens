@@ -17,6 +17,7 @@ pub mod launcher;
 pub mod lyrics;
 #[cfg(windows)]
 mod memory;
+pub mod network;
 
 #[cfg(windows)]
 pub use memory::diagnostic_report;
@@ -77,6 +78,7 @@ impl KugouIdentity {
             ],
             preferred_lyric_id: (self.recommend_krc_id != 0)
                 .then(|| self.recommend_krc_id.to_string()),
+            metadata_fallback: false,
         }
     }
 }
@@ -148,6 +150,12 @@ pub struct Probe {
     /// 开启增强模式时存在
     cdp: Option<cdp::Channel>,
 
+    /// 增强模式下按当前歌曲查询酷狗歌词服务
+    network: network::Lookup,
+
+    /// 当前歌曲从网络取得的歌词，本地缓存匹配失败时由 coordinator 使用
+    network_document: Option<Arc<crate::model::Document>>,
+
     #[cfg(windows)]
     memory: Option<memory::Reader>,
 
@@ -184,6 +192,8 @@ impl Probe {
             origin,
             media: super::qq_music::Probe::new(origin),
             cdp: None,
+            network: network::Lookup::default(),
+            network_document: None,
             enhanced,
             #[cfg(windows)]
             memory: None,
@@ -239,6 +249,7 @@ impl Probe {
             }
             self.previous = None;
             self.last_attach = None;
+            self.network_document = None;
 
             return playback;
         };
@@ -249,7 +260,23 @@ impl Probe {
             }
 
             session.track_id = Some(info.track_id());
-            session.lyric_match = Some(info.lyric_match());
+            // 推荐歌词 ID 用于定位以其他版本 hash 命名的本地缓存；下载的歌词作为最后兜底
+            let found = (!info.hash.is_empty()).then(|| {
+                self.network.poll(&network::Track {
+                    hash: info.hash.clone(),
+                    mix_song_id: info.mix_song_id.clone(),
+                    duration_ms: info
+                        .duration_ms
+                        .map_or(0, |duration| duration.round() as u64),
+                    filename: info.filename.clone(),
+                })
+            });
+            let mut lyric_match = info.lyric_match();
+
+            lyric_match.preferred_lyric_id =
+                found.as_ref().and_then(|found| found.lyric_id.clone());
+            session.lyric_match = Some(lyric_match);
+            self.network_document = found.and_then(|found| found.document);
 
             #[cfg(windows)]
             {
@@ -263,6 +290,8 @@ impl Probe {
 
             return playback;
         }
+
+        self.network_document = None;
 
         let enhanced_error = match enhanced {
             Some(Err(error)) => Some(format!("{error:#}")),
@@ -381,7 +410,7 @@ impl Adapter for Probe {
     fn sample(&mut self) -> Sample {
         Sample {
             playback: self.sample(),
-            document: None,
+            document: self.network_document.clone(),
         }
     }
 }
@@ -465,7 +494,7 @@ mod tests {
             catalog::read(&settings.kugou_cache_dir).unwrap(),
         );
 
-        for _ in 0..3 {
+        for _ in 0..8 {
             let playback = probe.sample();
             println!(
                 "sessions={:?} error={:?}",
