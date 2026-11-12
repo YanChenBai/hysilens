@@ -1,7 +1,7 @@
 import type { Snapshot } from '@hysilens/protocol';
 import { describe, expect, it } from 'vite-plus/test';
 
-import { activeLines, playbackPosition, tokenProgress } from './clock';
+import { activeLines, formatClock, playbackPosition, tokenProgress } from './clock';
 
 function snapshot(status = 'playing', rate: number | null = 1): Snapshot {
   return {
@@ -42,6 +42,15 @@ describe('playback clock', () => {
     expect(playbackPosition(snapshot('playing', null), 5500)).toBe(1000);
     expect(playbackPosition(snapshot(), 20000)).toBe(3000);
     expect(playbackPosition(snapshot(), 4000)).toBe(1000);
+  });
+
+  it('formats clock time and marks unknown values', () => {
+    expect(formatClock(0)).toBe('0:00');
+    expect(formatClock(192_999)).toBe('3:12');
+    expect(formatClock(246_000)).toBe('4:06');
+    expect(formatClock(3_725_000)).toBe('1:02:05');
+    expect(formatClock(null)).toBe('-');
+    expect(formatClock(Number.NaN)).toBe('-');
   });
 
   it('keeps overlapping vocals and honors line ends', () => {

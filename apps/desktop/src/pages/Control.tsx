@@ -58,7 +58,7 @@ function ThemePicker() {
  * 控制工作台：preview 区域、可拖拽分隔条与设置标签页
  */
 function Workspace() {
-  const { snapshot, connection, error } = useSession();
+  const { snapshot, connection, error, clockOffset } = useSession();
   const overlay = parseOverlayConfig(snapshot?.overlay).options;
   const failure = error || snapshot?.session?.error;
   const connected = connection === 'connected';
@@ -207,7 +207,7 @@ function Workspace() {
             <footer className="bg-background shrink-0 space-y-2 border-t px-4 py-3">
               <FieldError show={Boolean(failure)}>{failure}</FieldError>
               <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-                <NowPlaying snapshot={snapshot} connected={connected} />
+                <NowPlaying snapshot={snapshot} connected={connected} clockOffset={clockOffset} />
                 <div className="ml-auto flex shrink-0 items-center gap-2">
                   <div ref={setFooterActions} className="flex items-center gap-2 empty:hidden" />
                 </div>

@@ -26,6 +26,24 @@ export function playbackPosition(state: Snapshot | null, serverNow: number | nul
 }
 
 /**
+ * 把毫秒格式化为 `m:ss`，超过一小时为 `h:mm:ss`；未知或非法值返回 `-`
+ */
+export function formatClock(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) {
+    return '-';
+  }
+
+  const total = Math.floor(ms / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, '0');
+
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
+    : `${minutes}:${seconds}`;
+}
+
+/**
  * 覆盖 `position` 的行；`endMs === null` 的行会一直活跃到下一行
  */
 export function activeLines(lines: LyricLine[], position: number): LyricLine[] {
