@@ -75,10 +75,11 @@ function createStage(container: HTMLElement) {
   const stage = document.createElement('main');
   stage.className = 'tilted';
   const plane = div('plane');
+  const boundsProbe = div('bounds');
   const viewport = div('viewport');
   const track = div('track');
   viewport.append(track);
-  plane.append(viewport);
+  plane.append(viewport, boundsProbe);
   stage.append(plane);
   container.append(stage);
 
@@ -163,14 +164,15 @@ function createStage(container: HTMLElement) {
     plane.style.setProperty('--fit', '1');
 
     /* 读取 bounds 会先落定新的 track 位置，再恢复 transition */
-    const bounds = plane.getBoundingClientRect();
+    const bounds = boundsProbe.getBoundingClientRect();
+    const stageBounds = stage.getBoundingClientRect();
+    const centerX = stageBounds.left + stage.clientWidth / 2;
+    const centerY = stageBounds.top + stage.clientHeight / 2;
+    const width = 2 * Math.max(centerX - bounds.left, bounds.right - centerX);
+    const height = 2 * Math.max(centerY - bounds.top, bounds.bottom - centerY);
 
     /* 48px 是 tilted 平面与视口边缘的留白 */
-    const fit = Math.min(
-      1,
-      (stage.clientWidth - 48) / bounds.width,
-      (stage.clientHeight - 48) / bounds.height,
-    );
+    const fit = Math.min(1, (stage.clientWidth - 48) / width, (stage.clientHeight - 48) / height);
 
     plane.style.setProperty('--fit', String(Math.max(0.01, fit)));
 

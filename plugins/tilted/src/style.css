@@ -19,7 +19,7 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: calc(100% - 72px);
+  width: calc(100% - 48px);
   min-width: 0;
   /* Project the entire column as ONE face: glyphs and row spacing share the same depth. */
   transform: translate(-50%, -50%) scale(var(--fit, 1)) perspective(var(--perspective))
@@ -28,15 +28,22 @@ body {
 }
 .viewport {
   width: 100%;
-  overflow: hidden;
+  /* 只裁掉上下窗口外的歌词，保留当前行放大后的水平空间 */
+  clip-path: inset(0 -100vmax);
+}
+.bounds {
+  position: absolute;
+  inset: 0 calc((1 - var(--active-scale)) * 50%);
+  visibility: hidden;
+  pointer-events: none;
 }
 .track {
   position: relative;
   transition: transform 420ms cubic-bezier(0.22, 0.75, 0.25, 1);
 }
 .line {
-  /* Reserve the enlarged width before wrapping, so switching focus cannot reflow the text. */
-  width: calc(100% / (var(--active-scale) * 1.2));
+  /* 使用整列宽度换行，当前行放大的范围由整体投影缩放处理 */
+  width: 100%;
   margin-inline: auto;
   padding: calc(var(--line-gap) / 2) 8px;
   text-align: center;
