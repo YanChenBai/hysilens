@@ -1792,6 +1792,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower-http",
+ "tungstenite",
  "windows",
  "zip",
 ]

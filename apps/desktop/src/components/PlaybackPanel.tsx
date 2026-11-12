@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { send, sendOverlay, useSession } from '../lib/session';
 import { Choice } from './Choice';
 import { IgnoredLyricsDialog } from './IgnoredLyricsDialog';
+import { KugouEnhancedSetting } from './KugouEnhancedSetting';
 import { SettingsRow, SettingsSection } from './SettingsSection';
 
 const sources = [
@@ -66,6 +67,7 @@ export function PlaybackPanel() {
             </span>
           </div>
         </SettingsRow>
+        <KugouEnhancedSetting />
       </SettingsSection>
       {snapshot?.candidates.length || snapshot?.document ? (
         <SettingsSection title="当前歌曲" icon={<Music size={20} color="#a78bfa" />}>

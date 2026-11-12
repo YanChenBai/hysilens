@@ -35,6 +35,21 @@ export async function putJson(path: string, value: unknown): Promise<void> {
 }
 
 /**
+ * 无请求体的 POST，返回 JSON 响应
+ *
+ * @throws 响应不是 OK 时抛出，消息为响应体内容
+ */
+export async function postJson<T>(path: string): Promise<T> {
+  const response = await fetch(path, { method: 'POST' });
+
+  if (!response.ok) {
+    throw new Error((await response.text()) || `请求失败（${response.status}）`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+/**
  * 由 `/api/plugins` 提供的 plugin 目录扫描结果
  */
 export interface PluginCatalog {

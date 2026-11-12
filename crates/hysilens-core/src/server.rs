@@ -134,7 +134,10 @@ pub async fn serve_on(
     let registrations = vec![
         crate::platforms::wesing::registration(),
         crate::platforms::qq_music::registration(options.settings.cache_dir.clone()),
-        crate::platforms::kugou::registration(options.settings.kugou_cache_dir.clone()),
+        crate::platforms::kugou::registration(
+            options.settings.kugou_cache_dir.clone(),
+            options.settings.kugou_cdp,
+        ),
     ];
 
     let web = WebRoot::Embedded;
@@ -306,6 +309,9 @@ pub async fn serve_on(
         .route("/api/fonts", get(system_fonts))
         .route("/api/settings", get(get_settings).put(put_settings))
         .route("/api/dialog/directory", post(pick_directory))
+        .route("/api/kugou/enhanced", get(kugou_enhanced))
+        .route("/api/kugou/enhanced/launch", post(kugou_launch))
+        .route("/api/kugou/enhanced/shortcut", post(kugou_shortcut))
         .route("/api/diagnostics", get(diagnostic_info))
         .route("/api/diagnostics/export", post(export_diagnostics))
         .route("/api/catalog", get(get_catalog))
@@ -914,6 +920,86 @@ async fn pick_directory(
     {
         let _ = request.directory;
         (StatusCode::NOT_IMPLEMENTED, "当前平台不支持文件夹选择").into_response()
+    }
+}
+
+/// 酷狗增强模式的当前状态，供设置页显示
+async fn kugou_enhanced(State(state): State<AppState>) -> Response {
+    use crate::platforms::kugou::cdp;
+
+    let enabled = state.settings.read().await.kugou_cdp;
+    let (port_open, running) = tokio::task::spawn_blocking(|| {
+        #[cfg(windows)]
+        let running = crate::platforms::kugou::launcher::running();
+        #[cfg(not(windows))]
+        let running = false;
+
+        (cdp::port_open(cdp::PORT), running)
+    })
+    .await
+    .unwrap_or_default();
+    let status = cdp::status();
+
+    Json(serde_json::json!({
+        "enabled": enabled,
+        "port": cdp::PORT,
+        "portOpen": port_open,
+        "kugouRunning": running,
+        "connected": enabled && status.connected,
+        "error": if enabled { status.error } else { None },
+    }))
+    .into_response()
+}
+
+/// 以增强模式启动酷狗；酷狗已以普通模式运行时返回 409，不会结束它
+async fn kugou_launch(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    #[cfg(windows)]
+    {
+        use crate::platforms::kugou::launcher::{Launch, launch};
+
+        match tokio::task::spawn_blocking(launch).await {
+            Ok(Ok(Launch::NormalMode)) => (
+                StatusCode::CONFLICT,
+                "酷狗正以普通模式运行，请从托盘完全退出酷狗后再启动",
+            )
+                .into_response(),
+            Ok(Ok(result)) => Json(serde_json::json!({ "result": result })).into_response(),
+            Ok(Err(error)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}")).into_response()
+            }
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        (StatusCode::NOT_IMPLEMENTED, "当前平台不支持启动酷狗").into_response()
+    }
+}
+
+/// 在桌面创建以增强模式启动酷狗的快捷方式
+async fn kugou_shortcut(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if !allowed_origin(&headers, state.port) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    #[cfg(windows)]
+    {
+        match tokio::task::spawn_blocking(crate::platforms::kugou::launcher::create_shortcut).await
+        {
+            Ok(Ok(path)) => Json(serde_json::json!({ "path": path })).into_response(),
+            Ok(Err(error)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, format!("{error:#}")).into_response()
+            }
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        (StatusCode::NOT_IMPLEMENTED, "当前平台不支持创建快捷方式").into_response()
     }
 }
 
