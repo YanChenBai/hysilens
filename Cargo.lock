@@ -1757,7 +1757,7 @@ dependencies = [
 
 [[package]]
 name = "hysilens"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1772,7 +1772,7 @@ dependencies = [
 
 [[package]]
 name = "hysilens-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
