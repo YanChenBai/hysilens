@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/renderer-plugins.md">歌词插件开发</a>
+  <a href="packages/plugin/README.md">歌词插件开发</a>
   ·
   <a href="docs/plugin-system.md">插件系统设计</a>
 </p>
@@ -81,7 +81,7 @@ hysilens pack               # 构建并打包为 zip，在插件面板「安装�
 hysilens link               # 或者链接到用户插件目录，在应用中实时调试
 ```
 
-插件接口、配置声明与沙箱限制见 [歌词插件开发](docs/renderer-plugins.md)。
+插件接口、配置声明与沙箱限制见 [歌词插件开发](packages/plugin/README.md)。
 
 ```mermaid
 flowchart LR

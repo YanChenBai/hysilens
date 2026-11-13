@@ -9,7 +9,7 @@
     "plugin",
     "vite"
   ],
-  "homepage": "https://github.com/YanChenBai/hysilens/blob/main/docs/renderer-plugins.md",
+  "homepage": "https://github.com/YanChenBai/hysilens/blob/main/packages/plugin/README.md",
   "bugs": {
     "url": "https://github.com/YanChenBai/hysilens/issues"
   },

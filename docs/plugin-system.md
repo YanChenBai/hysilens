@@ -1,19 +1,18 @@
-# 插件系统 v1（重构设计）
+# 插件系统
 
-> 状态：已完成，仓库内只保留随应用发布的 `builtin:scroll` 与 `builtin:tilted`。
-> 不兼容旧插件接口；`apiVersion` 保持 `1`。插件作者指南见 [renderer-plugins.md](renderer-plugins.md)。
+Hysilens 的插件系统由插件 SDK、构建工具与宿主组成。本文说明包结构、运行时 API、通信协议和加载流程。开发与分发指南见 [插件 SDK README](../packages/plugin/README.md)。
 
-## 目标
+## 设计原则
 
 - 插件就是一个网页，怎么渲染由插件自己决定，宿主只提供数据。
 - 一份构建期配置文件描述元信息和配置 Schema，产物只有一份 `hysilens.json`。
 - 运行时插件包不含 zod；宿主只认 JSON Schema，不执行插件代码。
 - 宿主与插件经 MessageChannel 通信，iframe 沙箱隔离；OBS、桌面预览、本地悬浮窗、`hysilens dev` 共用同一个宿主实现。
-- 提供 `hysilens` CLI，第三方插件无需本仓库即可开发、构建、打包。
+- 提供 `hysilens` CLI，用于创建、开发、构建与打包插件。
 
 ## 包结构
 
-`packages/plugin` → `@hysilens/plugin`（取代 `@hysilens/plugin-sdk`）
+`packages/plugin` 对应发布包 `@hysilens/plugin`。
 
 | 入口                        | 内容                                                         | 运行环境                      |
 | --------------------------- | ------------------------------------------------------------ | ----------------------------- |
@@ -164,23 +163,25 @@ connect ─► init ─► setup() ─► onMounted（await）─► ready ─�
    沙箱 iframe 的 origin 为 `null`，所以 targetOrigin 只能用 `*`；端口本身就是通信凭证，之后的消息只走端口。
 2. 宿主 → 插件（经端口）：
 
-   | kind       | 载荷                                           | 时机                   |
-   | ---------- | ---------------------------------------------- | ---------------------- |
-   | `init`     | `{ config, lyrics, playback, clock, preview }` | 连接后一次             |
-   | `config`   | `{ config }`                                   | 配置保存 / 切换        |
-   | `lyrics`   | `{ document }`                                 | 文档引用变化           |
-   | `playback` | `{ playing, visible }`                         | 值变化                 |
-   | `clock`    | `{ position, rate }`                           | 锚点变化或漂移超过阈值 |
-   | `dispose`  | `{}`                                           | 卸载 / 切换插件        |
+   | kind       | 载荷                                           | 时机                     |
+   | ---------- | ---------------------------------------------- | ------------------------ |
+   | `init`     | `{ config, lyrics, playback, clock, preview }` | 连接后一次               |
+   | `config`   | `{ config }`                                   | 配置保存 / 切换          |
+   | `lyrics`   | `{ document }`                                 | 文档引用变化             |
+   | `playback` | `{ playing, visible }`                         | 值变化                   |
+   | `clock`    | `{ position, rate }`                           | 状态变化、漂移修正或心跳 |
+   | `dispose`  | `{}`                                           | 卸载 / 切换插件          |
 
 3. 插件 → 宿主：`ready`、`error { message, fatal }`、`disposed`。
 
 ### 时钟
 
 - `clock.position` 是已应用 offset 的歌词时间，`null` 表示未知；`rate` 为播放速率，暂停时为 `0`。
-- 插件收到锚点时用自己的 `performance.now()` 打时间戳，`time()` 返回
-  `position + (now - receivedAt) * rate`，单次外推最多 2000 ms（与现有 `playbackPosition` 一致）。
-- 宿主以低频计时器（250 ms）计算期望时间，在以下情况才发送新锚点：状态改变、跳转、演示循环回绕，或与插件推算值偏差超过 30 ms。消息不再随每帧发送。
+- 插件收到锚点时记录自己的 `performance.now()`，基础投影为
+  `position + clamp(now - receivedAt, 0, MAX_EXTRAPOLATION_MS) * rate`。
+  当前 `MAX_EXTRAPOLATION_MS` 为 2000 ms，限制的是距最近锚点经过的时间；歌词时间的推进量还需乘以 `rate`。持续收不到新锚点时，基础投影到达上限后停止推进。
+- `time()` 在基础投影上平滑吸收小幅修正，修正窗口为 600 ms；偏差达到 400 ms、暂停或位置未知时直接采用新锚点。
+- 宿主以低频计时器（250 ms）计算期望时间，在状态改变、跳转、演示循环回绕或投影偏差超过 30 ms 时发送新锚点。时间推进且位置已知时，还会每隔约 1000 ms 补发心跳锚点，因此正常播放可持续推进，无需每帧推送。
 
 ## 产物与安装
 
@@ -210,7 +211,7 @@ dist/
 }
 ```
 
-- 内置插件：`apps/desktop/public/plugins/<id>/`，只包含 `scripts/build-plugins.ts` 中 `BUNDLED` 名单里的插件（`builtin` 与 `tilted`）。外部插件：`<data>/plugins/<id>/`，同名时外部优先。
+- 内置插件：`apps/desktop/public/plugins/<id>/`，只包含 `scripts/build-plugins.ts` 中 `BUNDLED` 名单里的插件（`scroll` 与 `tilted`）。外部插件：`<data>/plugins/<id>/`，同名时外部优先。
 - `hysilens pack` 先构建，再输出 `<id>-<version>.zip`，压缩包根目录就是 `dist/` 的内容；桌面主窗口通过二进制 IPC 安装它。
 - Rust 只读取 `hysilens.json`，校验 `apiVersion`、`id` 与目录名一致（内置目录为 `builtin:<目录名>`）、`entry` 和 `styles` 路径不越界，以及 `configSchema` 是合法的 JSON Schema。
 
@@ -245,22 +246,5 @@ hysilens pack           # 构建并打包为 <id>-<version>.zip（--no-build 只
 
 `hysilens dev` 直接注册包内静态资源：`/` 提供开发工具页面，
 `/__hysilens/devtools/` 提供资源，`/__hysilens/plugin` 提供插件 iframe 页面。
-运行时不再查找 `@hysilens/devtools`，也不会临时构建它。
+运行时直接使用包内的开发工具产物，无需查找工作区源码或临时构建。
 仓库首次运行开发服务或测试前，以及修改开发工具源码后，需要重新执行上述构建命令。
-
-## 实施阶段
-
-| 阶段 | 内容                                                                                                                                                                                                                            | 负责   |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| P1   | `packages/plugin` 骨架；`/protocol`；运行时（`definePlugin`、ctx、时钟、生命周期）；`/host`（`PluginHost`）；测试                                                                                                               | Claude |
-| P2   | `/config`：`defineConfig`、helper、features 注入、JSON Schema 生成与类型推导；测试                                                                                                                                              | Claude |
-| P3   | `/vite` 插件、CLI（`build` / `validate` / `link` / `pack` / `dev` / `create`）；改写 `scripts/build-plugins.ts`                                                                                                                 | Claude |
-| P4a  | 迁移 `builtin`（作为参考实现，内部仍可用 React）                                                                                                                                                                                | Claude |
-| P4b  | 迁移其余插件；删除 `lyric-scenes`                                                                                                                                                                                               | Claude |
-| P5   | Rust：只读 `hysilens.json`、view 页、CORS、`/config` 接口；桌面端：`PluginView` / 预览 / 悬浮窗改用 `PluginHost`、编辑器改用 ajv；删除 `plugin-sdk`、`bridge.js`、`plugin-frame.ts`、`validateTheme`、`applyPluginCapabilities` | Claude |
-| P6   | 文档（替换 `renderer-plugins.md` 接口部分、`AGENTS.md`）；`vp check`、`vp test`、`cargo test`                                                                                                                                   | Claude |
-
-说明：
-
-- `@hysilens/plugin-sdk` 与 `@hysilens/lyric-scenes` 已删除。
-- 窗口、OBS 和播放器交互由用户手动验证。
