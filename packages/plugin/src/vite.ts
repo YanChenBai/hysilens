@@ -104,8 +104,8 @@ export function hysilens(): VitePlugin {
         define: { 'process.env.NODE_ENV': JSON.stringify(nodeEnv) },
         server: { cors: true },
         build: {
-          target: 'chrome90',
-          cssTarget: 'chrome90',
+          target: 'chrome100',
+          cssTarget: 'chrome100',
           outDir: 'dist',
           emptyOutDir: true,
           assetsDir: 'assets',

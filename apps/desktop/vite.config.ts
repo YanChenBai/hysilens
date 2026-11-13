@@ -4,7 +4,7 @@ import { defineConfig } from 'vite-plus';
 
 export default defineConfig({
   plugins: [react({ compiler: true }), tailwindcss()],
-  build: { target: 'chrome90', cssTarget: 'chrome90' },
+  build: { target: 'chrome100', cssTarget: 'chrome100' },
   server: {
     host: '127.0.0.1',
     port: 5173,

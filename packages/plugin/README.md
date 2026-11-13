@@ -34,7 +34,7 @@ npx hysilens pack      # 构建并打包为 my-lyrics-<version>.zip
 
 在 Hysilens 插件面板中点击「安装插件」，选择生成的 zip 即可安装。`hysilens pack --no-build` 可直接打包已有的构建产物。
 
-浏览器源的最低兼容目标为 Chromium 90，`hysilens build` 会设置对应的 JS 与 CSS 编译目标。运行时 API 和 CSS 特性也应兼容 Chromium 90，渲染效果需要在目标直播软件中手动验证。
+浏览器源的最低兼容目标为 Chromium 100，`hysilens build` 会设置对应的 JS 与 CSS 编译目标。运行时 API 和 CSS 特性也应兼容 Chromium 100，渲染效果需要在目标直播软件中手动验证。
 
 `hysilens dev` 打开的开发工具（`@hysilens/devtools`）使用与 OBS、桌面预览相同的 `PluginHost` 加载插件：
 

@@ -1,6 +1,6 @@
 ---
 name: hysilens-plugin-development
-description: '使用 @hysilens/plugin 创建、开发、调试和打包 Hysilens 歌词渲染插件，处理配置、生命周期、歌词计时、动画、字体资源和 Chromium 90 兼容。'
+description: '使用 @hysilens/plugin 创建、开发、调试和打包 Hysilens 歌词渲染插件，处理配置、生命周期、歌词计时、动画、字体资源和 Chromium 100 兼容。'
 ---
 
 # Hysilens 插件开发
@@ -51,13 +51,13 @@ React、Vue、Canvas、WebGL 和原生 DOM 均可使用；按渲染需求选择�
 - 字体加载、画布 resize 和配置变化后重新测量换行与位置；同时考虑放大、透视、整体缩放和裁切范围
 - 按插件的动态效果配置控制动画；面向直播输出时，明确系统 `prefers-reduced-motion` 与插件开关的优先级，避免宿主偏好静默关闭已启用的效果
 
-## Chromium 90 兼容
+## Chromium 100 兼容
 
-- 浏览器源以 Chromium 90 为基线，JS 和 CSS 构建目标使用 `chrome90`
+- 浏览器源以 Chromium 100 为基线，JS 和 CSS 构建目标使用 `chrome100`
 - 编译目标负责语法转换，不会补齐运行时 API；使用基线支持的 API，或在插件中实现普通兼容函数
-- 避免 `Array.at`、`findLast`、`findLastIndex`、`structuredClone` 等超出基线的调用；使用索引、循环或局部辅助函数，不修改全局对象或内建原型
+- 避免 `findLast`、`findLastIndex` 等超出基线的调用；使用索引、循环或局部辅助函数，不修改全局对象或内建原型
 - CSS 的容器单位、容器查询、动态混色等特性需要基线可用的写法或回退样式；核对构建产物，不能只看编译目标
-- 实际内核测试使用 Chromium 90 或目标直播软件；修改现代浏览器的 User-Agent 不会改变内核能力
+- 实际内核测试使用 Chromium 100 或目标直播软件；修改现代浏览器的 User-Agent 不会改变内核能力
 
 ## 资源与运行环境
 
