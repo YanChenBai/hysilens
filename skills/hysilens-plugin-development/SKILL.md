@@ -8,13 +8,14 @@ description: '使用 @hysilens/plugin 创建、开发、调试和打包 Hysilens
 使用 `@hysilens/plugin` 的公开 API 和 `hysilens` CLI 开发歌词渲染插件
 先查看项目的 `package.json`、`hysilens.config.ts`、入口文件与项目约定，按现有框架和脚本完成任务
 API 参数和类型以项目依赖的公开类型声明为准
+沿用项目现有包管理器和脚本，下文命令以 npm 为例
 
 ## 创建项目
 
 ```powershell
-vp dlx @hysilens/plugin create my-lyrics --name 我的歌词
+npx @hysilens/plugin create my-lyrics --name 我的歌词
 cd my-lyrics
-vp install
+npm install
 ```
 
 生成的项目通过 `@hysilens/plugin` 定义插件，通过 `@hysilens/plugin/config` 声明配置
@@ -26,7 +27,7 @@ React、Vue、Canvas、WebGL 和原生 DOM 均可使用；按渲染需求选择�
 - 每个配置字段提供默认值，配置须能转换为 JSON Schema；使用 SDK 的字段辅助函数，不使用 transform、preprocess 或 refine
 - 字体使用 `font()` 字段声明，并在渲染中应用 `ctx.config().fontFamily`；字体族名与 CSS 的 `@font-face` 保持一致
 - 仅声明实际实现的 features；`romanization`、`translation`、`reveal` 需要对应的渲染支持，`scale` 由宿主应用
-- 配置模块只在构建期执行；入口通过 `import type config from '../hysilens.config'` 引用类型，避免把配置模块和 zod 打进渲染代码
+- 配置模块在 Node 中执行；需要读取配置描述时可普通默认导入，SDK 的 Vite 集成会将它替换为求值后的纯 JSON 数据，保留类型推导且不打包 zod；仅引用类型时使用 `import type config from '../hysilens.config'`
 - 使用默认导出的 `definePlugin<typeof config>({ setup(ctx) { ... } })` 定义插件
 - `dist/hysilens.json` 由构建生成，修改插件描述时编辑配置文件
 
@@ -67,13 +68,13 @@ React、Vue、Canvas、WebGL 和原生 DOM 均可使用；按渲染需求选择�
 
 ## 调试、验证与交付
 
-使用项目的包管理器和本地 CLI；以下是 Vite+ 项目的常用命令：
+使用项目的包管理器和本地 CLI；以下命令在插件目录中执行，也可使用项目中对应的脚本：
 
 ```powershell
-vp run dev
-vp run build
-vp exec hysilens validate
-vp run pack
+npx hysilens dev
+npx hysilens build
+npx hysilens validate
+npx hysilens pack
 ```
 
 - `hysilens dev` 提供歌词预览与调试工具；按任务授权和项目约定启动，或使用已经运行的服务
