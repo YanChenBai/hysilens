@@ -4,8 +4,8 @@
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import { normalizePath, runnerImport } from 'vite-plus';
-import type { Plugin as VitePlugin, ViteDevServer } from 'vite-plus';
+import { normalizePath, runnerImport } from 'vite';
+import type { Plugin as VitePlugin, ViteDevServer } from 'vite';
 
 import { isConfigDefinition } from './config';
 import type { ConfigDefinition } from './config';

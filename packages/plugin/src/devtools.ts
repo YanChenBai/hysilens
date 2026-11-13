@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { Connect } from 'vite-plus';
+import type { Connect } from 'vite';
 
 /**
  * 内置 UI 资源对外提供的 URL 前缀

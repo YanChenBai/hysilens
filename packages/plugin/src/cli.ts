@@ -16,7 +16,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { zipSync } from 'fflate';
-import { build, createServer } from 'vite-plus';
+import { build, createServer } from 'vite';
 
 import {
   assertExternal,

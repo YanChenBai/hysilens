@@ -381,9 +381,9 @@ importers:
       fflate:
         specifier: 'catalog:'
         version: 0.8.3
-      vite-plus:
+      vite:
         specifier: 'catalog:'
-        version: 1.5.0(@types/node@26.6.6)(@vitest/ui@5.1.0)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1)
+        version: '@voidzero-dev/vite-plus-core@1.5.0(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2)(yaml@2.9.1)'
       zod:
         specifier: 'catalog:'
         version: 4.6.7

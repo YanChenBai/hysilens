@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "fflate": "catalog:",
-    "vite-plus": "catalog:",
+    "vite": "catalog:",
     "zod": "catalog:"
   }
 }
