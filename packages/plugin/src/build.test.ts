@@ -1,10 +1,13 @@
 import { readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import { strFromU8, unzipSync } from 'fflate';
-import { afterAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, describe, expect, it, vi } from 'vite-plus/test';
 
+import config from '../test/fixtures/leaky/hysilens.config';
 import { buildPlugin, packPlugin } from './cli';
+import { PluginHost } from './host';
 import {
   assertExternal,
   isSafePath,
@@ -53,10 +56,60 @@ describe('hysilens build', () => {
     expect((await validatePluginDirectory(dist, 'basic')).errors).toEqual([]);
   }, 60_000);
 
-  it('rejects value imports of the build-time config', async () => {
-    await expect(buildPlugin(join(fixtures, 'leaky'), { logLevel: 'silent' })).rejects.toThrow(
-      'import type',
-    );
+  it('replaces config value imports with matching data without bundling zod', async () => {
+    await buildPlugin(join(fixtures, 'leaky'), { logLevel: 'silent' });
+
+    const entry = await readFile(join(fixtures, 'leaky/dist/index.js'), 'utf8');
+
+    const root = { dataset: {}, style: {}, textContent: '' };
+    const listeners = new Map<string, (event: MessageEvent) => void>();
+    const parent = { postMessage() {} };
+
+    const context = {
+      AbortController,
+      performance,
+      document: {
+        baseURI: 'https://example.com/plugins/leaky/',
+        createElement: () => root,
+        body: { append() {} },
+      },
+      window: {
+        addEventListener: (type: string, listener: (event: MessageEvent) => void) => {
+          listeners.set(type, listener);
+        },
+        removeEventListener: (type: string) => {
+          listeners.delete(type);
+        },
+        parent,
+      },
+    };
+
+    expect(entry).not.toMatch(/toJSONSchema|ZodObject|from ["']zod/);
+    runInNewContext(entry, context);
+
+    const host = new PluginHost({
+      initial: {
+        config: { size: 24, mode: 'line', romanization: false },
+        lyrics: null,
+        playback: { playing: false, visible: true },
+        clock: { position: null, rate: 1 },
+        preview: false,
+      },
+    });
+
+    try {
+      host.connect({
+        postMessage(data, _origin, ports) {
+          listeners.get('message')?.({ data, source: parent, ports } as unknown as MessageEvent);
+        },
+      });
+
+      await vi.waitFor(() => {
+        expect(JSON.parse(root.textContent)).toEqual(JSON.parse(JSON.stringify(config)));
+      });
+    } finally {
+      await host.dispose();
+    }
   }, 60_000);
 });
 

@@ -138,9 +138,9 @@ export function hysilens(): VitePlugin {
         ].join('\n');
       }
 
-      /* 仅类型的 import 在打包前已被擦除，所以走到这里说明是值 import */
+      /* 在 Node 中求值配置后只输出纯数据，避免将 zod 和构建期依赖带入浏览器 */
       if (normalizePath(id.split('?')[0] ?? '') === configPath) {
-        this.error(`运行时代码只能用 import type 引用 ${CONFIG_FILE}，否则 zod 会被打进插件包`);
+        return `export default ${JSON.stringify(current())};`;
       }
 
       return undefined;

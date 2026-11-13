@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vite-plus/test';
 
+import importedConfig from '../test/fixtures/leaky/hysilens.config';
 import { color, defineConfig, font, number, select, text, toggle, z } from './config';
 import { definePlugin } from './runtime';
 import type { ConfigOf } from './runtime';
@@ -139,6 +140,18 @@ describe('defineConfig', () => {
 });
 
 describe('types', () => {
+  it('preserves field and feature types through a config value import', () => {
+    expect(importedConfig.kind).toBe('hysilens:config');
+
+    definePlugin<typeof importedConfig>({
+      setup({ config: current }) {
+        expectTypeOf(current()).toEqualTypeOf<
+          Readonly<{ size: number; mode: 'line' | 'word'; romanization: boolean }>
+        >();
+      },
+    });
+  });
+
   it('derives plugin config from fields and features, hiding scale', () => {
     const config = defineConfig({
       ...base,

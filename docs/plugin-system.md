@@ -66,7 +66,7 @@ export default defineConfig({
   - `x-hysilens-enum-labels`: `{ value: 显示名 }`
   - `x-hysilens-step`: 仅用于 UI 步进，不生成 `multipleOf`（浮点 `multipleOf` 在 ajv / jsonschema 中会误判）
   - `x-hysilens-font-families`: 插件自带字体
-- 运行时代码引用 `hysilens.config.ts` 时只能用 `import type`。如果用了值导入，Vite 插件会直接报错。
+- 运行时代码可默认导入 `hysilens.config.ts`；Vite 插件将默认导出替换为求值后的纯 JSON 数据，类型仍从原始声明推导，zod 不会进入运行时产物；仅引用类型时也可使用 `import type`。
 
 ### features
 

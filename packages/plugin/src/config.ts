@@ -1,7 +1,7 @@
 /**
  * 构建期的 plugin 描述
- * 只有 `hysilens build` 会求值它；plugin 运行时代码只能用 `import type` 引用，
- * 这样 zod 就不会被打进 iframe 包
+ * 配置在 Node 中求值；Vite 集成将运行时的默认导入替换为纯数据，
+ * 避免将 zod 打进 iframe 包
  */
 import { z } from 'zod';
 
@@ -75,7 +75,7 @@ export type ConfigOutput<S extends Shape, F> = Simplify<
 >;
 
 /**
- * `defineConfig` 产出的只读描述；CLI 读取它，plugin 代码只引用其类型
+ * `defineConfig` 产出的只读描述；CLI 读取它，plugin 可导入其数据或引用其类型
  */
 export interface ConfigDefinition<Output> extends ConfigCarrier<Output> {
   readonly kind: 'hysilens:config';
