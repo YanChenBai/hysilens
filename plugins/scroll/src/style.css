@@ -75,9 +75,3 @@ body {
   line-height: 22px;
   opacity: 0.75;
 }
-@media (prefers-reduced-motion: reduce) {
-  .track,
-  .line {
-    transition: none;
-  }
-}

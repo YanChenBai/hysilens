@@ -74,10 +74,3 @@ body {
   paint-order: stroke fill;
   text-shadow: var(--text-shadow);
 }
-@media (prefers-reduced-motion: reduce) {
-  .viewport,
-  .track,
-  .line {
-    transition: none;
-  }
-}
