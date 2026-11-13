@@ -148,6 +148,49 @@ function ShortcutButton({
 }
 
 /**
+ * 启用前的使用条件、歌词查询说明与操作错误
+ */
+function EnhancedModeDescription({
+  status,
+  error,
+}: {
+  status: EnhancedStatus | undefined;
+
+  error: Error | null;
+}) {
+  return (
+    <DialogBody>
+      <DialogDescription>
+        通过酷狗内嵌网页的接口读取播放进度和歌曲
+        hash，读取失败时自动回退到当前方式。该接口并非酷狗公开承诺的功能，酷狗升级后可能失效。
+      </DialogDescription>
+      <div className="text-muted-foreground mt-4 space-y-3 text-sm leading-relaxed">
+        <div>
+          <p className="text-foreground font-medium">使用前需要</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            <li>从托盘完全退出酷狗，只关闭窗口无效</li>
+            <li>通过下方按钮或增强快捷方式启动酷狗</li>
+            <li>关闭酷狗的开机自启，否则开机启动的酷狗不会开启增强模式</li>
+          </ul>
+        </div>
+        <div>
+          <p className="text-foreground font-medium">联网查询歌词</p>
+          <p className="mt-1">
+            每首歌会向酷狗歌词服务（krcs.kugou.com、lyrics.kugou.com）发送当前歌曲的 hash、曲库 ID
+            和时长，取得酷狗推荐的歌词：用于准确定位本地缓存，本地缓存匹配不到时直接使用下载的歌词。不发送账号或设备信息，下载的歌词不会写入磁盘。
+          </p>
+        </div>
+        <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
+          酷狗会在 127.0.0.1:{status?.port ?? 9225}{' '}
+          开放调试端口，仅本机可访问，但本机其他程序也能借此操作已登录的酷狗页面。关闭增强模式后，需正常重启酷狗端口才会关闭。
+        </p>
+        <FieldError show={Boolean(error)}>{error?.message}</FieldError>
+      </div>
+    </DialogBody>
+  );
+}
+
+/**
  * 播放设置中的酷狗增强模式开关
  *
  * 开启前用模态框说明启动条件与本机调试端口的风险；关闭时直接停用，不影响正在运行的酷狗
@@ -210,6 +253,7 @@ export function KugouEnhancedSetting() {
   const enabled = status.data?.enabled ?? false;
   const canLaunch = enabled && status.data !== undefined && !status.data.endpointAvailable;
   const error = toggle.error ?? launch.error ?? shortcut.error;
+  const dialogError = toggle.error ?? shortcut.error;
 
   async function enableAndLaunch() {
     const request = ++launchRequest.current;
@@ -292,37 +336,7 @@ export function KugouEnhancedSetting() {
       >
         <DialogContent>
           <DialogTitle>启用酷狗增强模式</DialogTitle>
-          <DialogBody>
-            <DialogDescription>
-              通过酷狗内嵌网页的接口读取播放进度和歌曲
-              hash，读取失败时自动回退到当前方式。该接口并非酷狗公开承诺的功能，酷狗升级后可能失效。
-            </DialogDescription>
-            <div className="text-muted-foreground mt-4 space-y-3 text-sm leading-relaxed">
-              <div>
-                <p className="text-foreground font-medium">使用前需要</p>
-                <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                  <li>从托盘完全退出酷狗，只关闭窗口无效</li>
-                  <li>通过下方按钮或增强快捷方式启动酷狗</li>
-                  <li>关闭酷狗的开机自启，否则开机启动的酷狗不会开启增强模式</li>
-                </ul>
-              </div>
-              <div>
-                <p className="text-foreground font-medium">联网查询歌词</p>
-                <p className="mt-1">
-                  每首歌会向酷狗歌词服务（krcs.kugou.com、lyrics.kugou.com）发送当前歌曲的
-                  hash、曲库 ID
-                  和时长，取得酷狗推荐的歌词：用于准确定位本地缓存，本地缓存匹配不到时直接使用下载的歌词。不发送账号或设备信息，下载的歌词不会写入磁盘。
-                </p>
-              </div>
-              <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-300">
-                酷狗会在 127.0.0.1:{status.data?.port ?? 9225}{' '}
-                开放调试端口，仅本机可访问，但本机其他程序也能借此操作已登录的酷狗页面。关闭增强模式后，需正常重启酷狗端口才会关闭。
-              </p>
-              <FieldError show={Boolean(toggle.error ?? shortcut.error)}>
-                {(toggle.error ?? shortcut.error)?.message}
-              </FieldError>
-            </div>
-          </DialogBody>
+          <EnhancedModeDescription status={status.data} error={dialogError} />
           <DialogFooter className="flex-wrap">
             <DialogClose render={<Button variant="outline" size="sm" />}>取消</DialogClose>
             <ShortcutButton
